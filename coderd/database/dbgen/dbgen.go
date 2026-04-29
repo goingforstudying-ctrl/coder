@@ -2000,6 +2000,8 @@ func AIBridgeInterception(t testing.TB, db database.Store, seed database.InsertA
 		ClientSessionID:            seed.ClientSessionID,
 		CredentialKind:             takeFirst(seed.CredentialKind, database.CredentialKindCentralized),
 		CredentialHint:             takeFirst(seed.CredentialHint, ""),
+		BoundarySessionID:          seed.BoundarySessionID,
+		BoundarySequenceNumber:     seed.BoundarySequenceNumber,
 	})
 	if endedAt != nil {
 		interception, err = db.UpdateAIBridgeInterceptionEnded(genCtx, database.UpdateAIBridgeInterceptionEndedParams{
