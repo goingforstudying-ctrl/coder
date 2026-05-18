@@ -9803,9 +9803,8 @@ func (p *Server) updateLastTurnSummary(
 	defer cancel()
 
 	affected, err := p.db.UpdateChatLastTurnSummary(updateCtx, database.UpdateChatLastTurnSummaryParams{
-		ID:                chat.ID,
-		ExpectedUpdatedAt: expectedUpdatedAt,
-		LastTurnSummary:   lastTurnSummary,
+		ID:              chat.ID,
+		LastTurnSummary: lastTurnSummary,
 	})
 	if err != nil {
 		logger.Warn(updateCtx, "failed to update chat turn summary",
