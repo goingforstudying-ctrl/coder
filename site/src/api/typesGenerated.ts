@@ -2752,6 +2752,7 @@ export interface ChatSourcePart {
 export type ChatStatus =
 	| "completed"
 	| "error"
+	| "interrupting"
 	| "paused"
 	| "pending"
 	| "requires_action"
@@ -2761,6 +2762,7 @@ export type ChatStatus =
 export const ChatStatuses: ChatStatus[] = [
 	"completed",
 	"error",
+	"interrupting",
 	"paused",
 	"pending",
 	"requires_action",

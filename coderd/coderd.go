@@ -1342,6 +1342,7 @@ func New(options *Options) *API {
 					r.Get("/git", api.watchChatGit)
 				})
 				r.Post("/interrupt", api.interruptChat)
+				r.Post("/reconcile-invalid", api.reconcileInvalidChatState)
 				r.Post("/tool-results", api.postChatToolResults)
 				r.Post("/title/regenerate", api.regenerateChatTitle)
 				r.Post("/title/propose", api.proposeChatTitle)
