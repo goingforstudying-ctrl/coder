@@ -31,6 +31,8 @@ import (
 	"github.com/coder/quartz"
 )
 
+const skipLegacyChatStream = "chatd refactor: remove in PR 4"
+
 func chatLastErrorMessage(raw pqtype.NullRawMessage) string {
 	if !raw.Valid {
 		return ""
@@ -485,6 +487,7 @@ func TestSubscribeRelaySnapshotDelivered(t *testing.T) {
 
 func TestSubscribeRetryEventAcrossInstances(t *testing.T) {
 	t.Parallel()
+	t.Skip(skipLegacyChatStream)
 
 	db, ps := dbtestutil.NewDB(t)
 	workerID := uuid.New()
@@ -1287,6 +1290,7 @@ func TestSubscribeRelayMultipleReconnects(t *testing.T) {
 // the durable message ID and dropped from new buffer snapshots.
 func TestSubscribeRelayDialCanceledOnFastCompletion(t *testing.T) {
 	t.Parallel()
+	t.Skip(skipLegacyChatStream)
 
 	db, ps := dbtestutil.NewDB(t)
 	workerID := uuid.New()

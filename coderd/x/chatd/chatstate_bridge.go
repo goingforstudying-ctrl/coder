@@ -1,6 +1,8 @@
 package chatd
 
 import (
+	"database/sql"
+
 	"github.com/google/uuid"
 	"github.com/sqlc-dev/pqtype"
 
@@ -27,9 +29,7 @@ func systemMessage(rawContent pqtype.NullRawMessage, modelConfigID uuid.UUID) ch
 	}
 }
 
-// userMessage builds a chatstate.Message representing a user message
-// for CreateChat, SendMessage, or EditMessage.
-func userMessage(rawContent pqtype.NullRawMessage, modelConfigID, createdBy uuid.UUID) chatstate.Message {
+func userMessageWithAPIKeyID(rawContent pqtype.NullRawMessage, modelConfigID, createdBy uuid.UUID, apiKeyID string) chatstate.Message {
 	return chatstate.Message{
 		Role:           database.ChatMessageRoleUser,
 		Content:        rawContent,
@@ -37,6 +37,7 @@ func userMessage(rawContent pqtype.NullRawMessage, modelConfigID, createdBy uuid
 		ModelConfigID:  uuid.NullUUID{UUID: modelConfigID, Valid: modelConfigID != uuid.Nil},
 		CreatedBy:      uuid.NullUUID{UUID: createdBy, Valid: createdBy != uuid.Nil},
 		ContentVersion: chatprompt.CurrentContentVersion,
+		APIKeyID:       sql.NullString{String: apiKeyID, Valid: apiKeyID != ""},
 	}
 }
 
