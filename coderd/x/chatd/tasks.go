@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"cdr.dev/slog/v3"
 	"github.com/google/uuid"
 	"golang.org/x/xerrors"
 
+	"cdr.dev/slog/v3"
 	"github.com/coder/coder/v2/coderd/database"
 	"github.com/coder/coder/v2/coderd/database/db2sdk"
 	coderdpubsub "github.com/coder/coder/v2/coderd/pubsub"
