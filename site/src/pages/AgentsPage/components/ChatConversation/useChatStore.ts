@@ -184,6 +184,29 @@ export const useChatStore = (
 		[chatID, queryClient],
 	);
 
+	const replaceCacheMessages = useCallback(
+		(messages: readonly TypesGen.ChatMessage[]) => {
+			if (!chatID) {
+				return;
+			}
+			queryClient.setQueryData<
+				InfiniteData<TypesGen.ChatMessagesResponse> | undefined
+			>(chatMessagesKey(chatID), (currentData) => {
+				if (!currentData?.pages?.length) {
+					return currentData;
+				}
+				const firstPage = currentData.pages[0];
+				const updatedMessages = [...messages].sort((a, b) => b.id - a.id);
+				return {
+					...currentData,
+					pages: [{ ...firstPage, messages: updatedMessages, has_more: false }],
+					pageParams: currentData.pageParams.slice(0, 1),
+				};
+			});
+		},
+		[chatID, queryClient],
+	);
+
 	useEffect(() => {
 		store.batch(() => {
 			// When the active chat changes, clear stale messages
@@ -393,9 +416,9 @@ export const useChatStore = (
 		};
 
 		// Discard buffered parts without applying them. Used when
-		// the stream is no longer active (pending, waiting, retry)
+		// the preview is reset or the stream is no longer active
 		// so stale buffered parts are not applied after the
-		// status transition.
+		// boundary event.
 		const discardBufferedParts = () => {
 			partsBuf.length = 0;
 			if (partsFlushTimer !== null) {
@@ -427,6 +450,9 @@ export const useChatStore = (
 			// instead of N copies and N sorts.
 			const pendingMessages: TypesGen.ChatMessage[] = [];
 			let needsStreamReset = false;
+			let historyResetActive = false;
+			let historyResetOccurred = false;
+			const replacementMessages: TypesGen.ChatMessage[] = [];
 
 			// Wrap all store mutations in a batch so subscribers
 			// are notified exactly once at the end, not per event.
@@ -447,12 +473,37 @@ export const useChatStore = (
 						continue;
 					}
 
+					if (streamEvent.chat_id && streamEvent.chat_id !== chatID) {
+						const nextStatus = streamEvent.status?.status;
+						if (streamEvent.type === "status" && nextStatus) {
+							store.setSubagentStatusOverride(streamEvent.chat_id, nextStatus);
+						}
+						continue;
+					}
+
+					if (streamEvent.type === "history_reset") {
+						discardBufferedParts();
+						store.clearStreamState();
+						historyResetActive = true;
+						historyResetOccurred = true;
+						replacementMessages.length = 0;
+						pendingMessages.length = 0;
+						needsStreamReset = false;
+						continue;
+					}
+
+					if (streamEvent.type === "preview_reset") {
+						discardBufferedParts();
+						store.clearStreamState();
+						continue;
+					}
+
 					// Only flush buffered parts before events that
 					// need them applied first. `message` events
 					// commit durable state that must include all
 					// stream parts. `error` events should surface
 					// partial output. Other events (status, retry,
-					// queue_update) must NOT flush — status changes
+					// queue_update) must not flush. Status changes
 					// need to be visible before parts so the
 					// "Thinking..." indicator can render, and retry
 					// clears stream state which a flush would
@@ -467,11 +518,12 @@ export const useChatStore = (
 							if (!message) {
 								continue;
 							}
-							if (streamEvent.chat_id && streamEvent.chat_id !== chatID) {
-								continue;
-							}
 							store.clearRetryState();
-							pendingMessages.push(message);
+							if (historyResetActive) {
+								replacementMessages.push(message);
+							} else {
+								pendingMessages.push(message);
+							}
 							if (
 								message.id !== undefined &&
 								(lastMessageIdRef.current === undefined ||
@@ -485,9 +537,6 @@ export const useChatStore = (
 							continue;
 						}
 						case "queue_update":
-							if (streamEvent.chat_id && streamEvent.chat_id !== chatID) {
-								continue;
-							}
 							wsQueueUpdateReceivedRef.current = true;
 							store.applyAuthoritativeQueuedMessages(
 								streamEvent.queued_messages,
@@ -497,14 +546,6 @@ export const useChatStore = (
 						case "status": {
 							const nextStatus = streamEvent.status?.status;
 							if (!nextStatus) {
-								continue;
-							}
-
-							if (streamEvent.chat_id && streamEvent.chat_id !== chatID) {
-								store.setSubagentStatusOverride(
-									streamEvent.chat_id,
-									nextStatus,
-								);
 								continue;
 							}
 
@@ -529,9 +570,6 @@ export const useChatStore = (
 							continue;
 						}
 						case "error": {
-							if (streamEvent.chat_id && streamEvent.chat_id !== chatID) {
-								continue;
-							}
 							const reason = normalizeChatErrorPayload(streamEvent.error) ?? {
 								kind: "generic",
 								message: "Chat processing failed.",
@@ -546,9 +584,6 @@ export const useChatStore = (
 							continue;
 						}
 						case "retry": {
-							if (streamEvent.chat_id && streamEvent.chat_id !== chatID) {
-								continue;
-							}
 							const retry = streamEvent.retry;
 							if (retry) {
 								discardBufferedParts();
@@ -566,6 +601,11 @@ export const useChatStore = (
 				// parts. If parts were already flushed by a
 				// non-message_part event above, this is a no-op.
 				schedulePartsFlush();
+
+				if (historyResetOccurred) {
+					store.replaceMessages(replacementMessages);
+					replaceCacheMessages(replacementMessages);
+				}
 
 				// Bulk-upsert all collected durable messages in one
 				// pass: one Map copy + one sort instead of N each.
@@ -644,7 +684,14 @@ export const useChatStore = (
 			}
 			activeChatIDRef.current = null;
 		};
-	}, [chatID, initialDataLoaded, queryClient, store, upsertCacheMessages]);
+	}, [
+		chatID,
+		initialDataLoaded,
+		queryClient,
+		replaceCacheMessages,
+		store,
+		upsertCacheMessages,
+	]);
 	return {
 		store,
 		clearStreamError: () => {
