@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+	getFileReferenceDisplay,
 	hasInlineContentAfter,
 	hasInlineContentBefore,
-	getFileReferenceDisplay,
 } from "./fileReferenceDisplay";
 
 describe("getFileReferenceDisplay", () => {

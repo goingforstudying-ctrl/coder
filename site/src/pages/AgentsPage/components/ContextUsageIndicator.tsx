@@ -14,8 +14,8 @@ import {
 } from "#/components/Tooltip/Tooltip";
 import { cn } from "#/utils/cn";
 import { isMobileViewport } from "#/utils/mobile";
-import { SvgRingProgress } from "./SvgRingProgress";
 import { getPathBasename } from "../utils/path";
+import { SvgRingProgress } from "./SvgRingProgress";
 
 export interface AgentContextUsage {
 	readonly usedTokens?: number;

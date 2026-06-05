@@ -10,6 +10,7 @@ import {
 	TooltipContent,
 	TooltipTrigger,
 } from "#/components/Tooltip/Tooltip";
+import { getPathBasename } from "../../../utils/path";
 import {
 	type AgentDisplayState,
 	isAgentDisplayFullyExpanded,
@@ -17,7 +18,6 @@ import {
 } from "./displayMode";
 import { AgentDisplayModeToolCollapsible } from "./ToolCollapsible";
 import { ToolIcon } from "./ToolIcon";
-import { getPathBasename } from "../../../utils/path";
 import {
 	DIFFS_FONT_STYLE,
 	type EditFilesFileEntry,

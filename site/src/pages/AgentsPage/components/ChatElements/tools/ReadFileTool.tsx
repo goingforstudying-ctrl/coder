@@ -8,10 +8,10 @@ import {
 	TooltipContent,
 	TooltipTrigger,
 } from "#/components/Tooltip/Tooltip";
+import { getPathBasename } from "../../../utils/path";
 import { asRecord, asString } from "../runtimeTypeUtils";
 import { ToolCollapsible } from "./ToolCollapsible";
 import { ToolIcon } from "./ToolIcon";
-import { getPathBasename } from "../../../utils/path";
 import {
 	DIFFS_FONT_STYLE,
 	getFileViewerOptionsMinimal,

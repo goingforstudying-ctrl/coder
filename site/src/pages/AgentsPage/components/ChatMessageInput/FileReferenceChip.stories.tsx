@@ -59,9 +59,9 @@ export const LeftAlignedInline: Story = {
 export const AbuttingInlineText: Story = {
 	render: (args) => (
 		<p className="m-0 font-sans text-sm leading-6 text-content-primary">
-			{"Before"}
+			<span>Before</span>
 			<FileReferenceChip {...args} className="ml-1 mr-1" />
-			{"after"}
+			<span>after</span>
 		</p>
 	),
 };

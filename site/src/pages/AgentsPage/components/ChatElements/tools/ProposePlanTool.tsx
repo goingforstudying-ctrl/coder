@@ -9,11 +9,11 @@ import {
 	TooltipContent,
 	TooltipTrigger,
 } from "#/components/Tooltip/Tooltip";
+import { getPathBasename } from "../../../utils/path";
 import { Response } from "../Response";
 import { TranscriptRow } from "../TranscriptRow";
 import { ToolIcon } from "./ToolIcon";
 import type { ToolStatus } from "./utils";
-import { getPathBasename } from "../../../utils/path";
 
 export const ProposePlanTool: React.FC<{
 	content?: string;

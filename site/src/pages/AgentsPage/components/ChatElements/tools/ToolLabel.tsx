@@ -1,10 +1,10 @@
 import type React from "react";
+import { getPathBasename } from "../../../utils/path";
 import {
 	getProvidedSubagentTitle,
 	getSubagentDescriptor,
 } from "./subagentDescriptor";
 import { asRecord, asString, humanizeMCPToolName, parseArgs } from "./utils";
-import { getPathBasename } from "../../../utils/path";
 
 const renderSubagentLabel = (
 	name: string,
