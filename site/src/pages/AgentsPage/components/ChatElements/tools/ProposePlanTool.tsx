@@ -13,6 +13,7 @@ import { Response } from "../Response";
 import { TranscriptRow } from "../TranscriptRow";
 import { ToolIcon } from "./ToolIcon";
 import type { ToolStatus } from "./utils";
+import { getPathBasename } from "../../../utils/path";
 
 export const ProposePlanTool: React.FC<{
 	content?: string;
@@ -55,7 +56,7 @@ export const ProposePlanTool: React.FC<{
 		? (inlineContent ?? "")
 		: (fileQuery.data ?? "");
 	const isRunning = status === "running";
-	const filename = (path || "PLAN.md").split("/").pop() || "PLAN.md";
+	const filename = getPathBasename(path || "PLAN.md") || "PLAN.md";
 	const effectiveError = isError || Boolean(fetchError);
 	const effectiveErrorMessage = errorMessage || fetchError;
 	const hasDisplayContent = displayContent.trim().length > 0;

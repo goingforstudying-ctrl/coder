@@ -11,6 +11,7 @@ import {
 import { asRecord, asString } from "../runtimeTypeUtils";
 import { ToolCollapsible } from "./ToolCollapsible";
 import { ToolIcon } from "./ToolIcon";
+import { getPathBasename } from "../../../utils/path";
 import {
 	DIFFS_FONT_STYLE,
 	getFileViewerOptionsMinimal,
@@ -86,7 +87,7 @@ export const ReadFileTool: React.FC<{
 }) => {
 	const hasContent = content.length > 0 || isError;
 	const isRunning = status === "running";
-	const filename = path.split("/").pop() || path;
+	const filename = getPathBasename(path);
 	const label = isRunning ? `Reading ${filename}…` : `Read ${filename}`;
 
 	return (

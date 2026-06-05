@@ -17,6 +17,7 @@ import {
 } from "./displayMode";
 import { AgentDisplayModeToolCollapsible } from "./ToolCollapsible";
 import { ToolIcon } from "./ToolIcon";
+import { getPathBasename } from "../../../utils/path";
 import {
 	DIFFS_FONT_STYLE,
 	type EditFilesFileEntry,
@@ -47,14 +48,14 @@ export const EditFilesTool: React.FC<{
 	let label: string;
 	if (isRunning) {
 		if (files.length === 1) {
-			label = `Editing ${files[0].path.split("/").pop() || files[0].path}…`;
+			label = `Editing ${getPathBasename(files[0].path)}…`;
 		} else if (files.length > 1) {
 			label = `Editing ${files.length} files…`;
 		} else {
 			label = "Editing files…";
 		}
 	} else if (files.length === 1) {
-		const filename = files[0].path.split("/").pop() || files[0].path;
+		const filename = getPathBasename(files[0].path);
 		label = `Edited ${filename}`;
 	} else if (files.length > 1) {
 		label = `Edited ${files.length} files`;

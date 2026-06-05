@@ -17,6 +17,7 @@ import {
 } from "./displayMode";
 import { AgentDisplayModeToolCollapsible } from "./ToolCollapsible";
 import { ToolIcon } from "./ToolIcon";
+import { getPathBasename } from "../../../utils/path";
 import {
 	DIFFS_FONT_STYLE,
 	getDiffViewerOptions,
@@ -43,7 +44,7 @@ export const WriteFileTool: React.FC<{
 		WRITE_FILE_AUTO_DISPLAY_STATE,
 	);
 
-	const filename = path.split("/").pop() || path;
+	const filename = getPathBasename(path);
 	const label = isRunning ? `Writing ${filename}…` : `Wrote ${filename}`;
 
 	return (
