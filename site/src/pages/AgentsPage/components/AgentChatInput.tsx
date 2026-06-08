@@ -68,6 +68,10 @@ import {
 } from "../utils/chatAttachments";
 import { formatProviderLabel } from "../utils/modelOptions";
 import {
+	AgentSetupNoticeBanner,
+	type AgentSetupNoticeConfig,
+} from "./AgentSetupNoticeBanner";
+import {
 	AttachmentPreview,
 	isUploadInProgress,
 	type UploadState,
@@ -183,7 +187,7 @@ interface AgentChatInputProps {
 	sshCommand?: string;
 	attachedWorkspace?: AttachedWorkspaceInfo;
 	folder?: string;
-	agentSetupNotice?: React.ReactNode;
+	agentSetupNotice?: AgentSetupNoticeConfig;
 }
 
 export interface AttachedWorkspaceInfo {
@@ -1045,7 +1049,9 @@ export const AgentChatInput: FC<AgentChatInputProps> = ({
 				/>
 			)}
 			{agentSetupNotice && (
-				<div className="relative z-0 mb-[-2.5rem]">{agentSetupNotice}</div>
+				<div className="relative z-0 mb-[-2.5rem]">
+					<AgentSetupNoticeBanner {...agentSetupNotice} />
+				</div>
 			)}
 			<div
 				ref={setComposerElement}

@@ -21,7 +21,7 @@ import {
 	type CreateChatOptions,
 } from "./components/AgentCreateForm";
 import { AgentPageHeader } from "./components/AgentPageHeader";
-import { AgentSetupNotice } from "./components/AgentSetupNotice";
+import { getAgentSetupNoticeConfig } from "./components/AgentSetupNoticeBanner";
 import { ChimeButton } from "./components/ChimeButton";
 import { WebPushButton } from "./components/WebPushButton";
 import { getAgentChatSendShortcut } from "./utils/agentChatSendShortcut";
@@ -72,29 +72,11 @@ const AgentCreatePage: FC = () => {
 		chatModelConfigsQuery.isSuccess && chatModelsQuery.isSuccess
 			? catalogModelOptions.length
 			: undefined;
-	const isAdmin = permissions.editDeploymentConfig;
-	const agentSetupNotice = (() => {
-		if (
-			isAdmin &&
-			providerCount !== undefined &&
-			modelCount !== undefined &&
-			(providerCount === 0 || modelCount === 0)
-		) {
-			return (
-				<AgentSetupNotice
-					isAdmin
-					providerCount={providerCount}
-					modelCount={modelCount}
-				/>
-			);
-		}
-		if (!isAdmin && modelCount !== undefined && modelCount === 0) {
-			return (
-				<AgentSetupNotice isAdmin={false} providerCount={0} modelCount={0} />
-			);
-		}
-		return undefined;
-	})();
+	const agentSetupNotice = getAgentSetupNoticeConfig({
+		canConfigureAgentSetup: permissions.editDeploymentConfig,
+		providerCount: providerCount ?? 0,
+		modelCount: modelCount ?? 0,
+	});
 
 	const handleCreateChat = async ({
 		message,

@@ -22,6 +22,7 @@ import {
 	AgentChatInput,
 	type ChatMessageInputRef,
 } from "./components/AgentChatInput";
+import type { AgentSetupNoticeConfig } from "./components/AgentSetupNoticeBanner";
 import {
 	ChatConversationSkeleton,
 	RightPanelSkeleton,
@@ -116,7 +117,7 @@ interface AgentChatPageViewProps {
 	modelOptions: readonly ModelSelectorOption[];
 	modelSelectorPlaceholder: string;
 	modelSelectorHelp?: ReactNode;
-	agentSetupNotice?: ReactNode;
+	agentSetupNotice?: AgentSetupNoticeConfig;
 	hasModelOptions: boolean;
 	isModelCatalogLoading?: boolean;
 	planModeEnabled?: boolean;

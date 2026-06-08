@@ -63,7 +63,7 @@ import {
 } from "./AgentChatPageView";
 import type { AgentsOutletContext } from "./AgentsPage";
 import type { ChatMessageInputRef } from "./components/AgentChatInput";
-import { AgentSetupNotice } from "./components/AgentSetupNotice";
+import { getAgentSetupNoticeConfig } from "./components/AgentSetupNoticeBanner";
 import { normalizeChatErrorPayload } from "./components/ChatConversation/chatError";
 import {
 	getParentChatID,
@@ -1129,31 +1129,11 @@ const AgentChatPage: FC = () => {
 		hasConfiguredModels,
 		hasUserFixableModelProviders,
 	});
-	const isAdmin = permissions.editDeploymentConfig;
-	const agentSetupNotice = (() => {
-		// Admin: show when providers or models are missing
-		if (
-			isAdmin &&
-			providerCount !== undefined &&
-			modelCount !== undefined &&
-			(providerCount === 0 || modelCount === 0)
-		) {
-			return (
-				<AgentSetupNotice
-					isAdmin
-					providerCount={providerCount}
-					modelCount={modelCount}
-				/>
-			);
-		}
-		// Member: show when no models are available
-		if (!isAdmin && modelCount !== undefined && modelCount === 0) {
-			return (
-				<AgentSetupNotice isAdmin={false} providerCount={0} modelCount={0} />
-			);
-		}
-		return undefined;
-	})();
+	const agentSetupNotice = getAgentSetupNoticeConfig({
+		canConfigureAgentSetup: permissions.editDeploymentConfig,
+		providerCount: providerCount ?? 0,
+		modelCount: modelCount ?? 0,
+	});
 	const isSubmissionPending =
 		isSendPending || isEditPending || isInterruptPending;
 	const isChatSettingsPending =

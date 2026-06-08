@@ -19,6 +19,7 @@ import {
 	isUploadInProgress,
 	type UploadState,
 } from "./AgentChatInput";
+import type { AgentSetupNoticeConfig } from "./AgentSetupNoticeBanner";
 import { ConversationTimeline } from "./ChatConversation/ConversationTimeline";
 import { getLatestContextUsage } from "./ChatConversation/chatHelpers";
 import {
@@ -169,7 +170,7 @@ interface ChatPageInputProps {
 	modelOptions: readonly ModelSelectorOption[];
 	modelSelectorPlaceholder: string;
 	modelSelectorHelp?: ReactNode;
-	agentSetupNotice?: ReactNode;
+	agentSetupNotice?: AgentSetupNoticeConfig;
 	planModeEnabled?: boolean;
 	onPlanModeToggle?: (enabled: boolean) => void;
 	isModelCatalogLoading?: boolean;

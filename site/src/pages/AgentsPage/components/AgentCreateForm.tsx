@@ -1,11 +1,4 @@
-import {
-	type FC,
-	type ReactNode,
-	useEffect,
-	useEffectEvent,
-	useRef,
-	useState,
-} from "react";
+import { type FC, useEffect, useEffectEvent, useRef, useState } from "react";
 import { useQuery } from "react-query";
 import { Link } from "react-router";
 import { toast } from "sonner";
@@ -32,6 +25,7 @@ import {
 	isChatUsageLimitExceededResponse,
 } from "../utils/usageLimitMessage";
 import { AgentChatInput } from "./AgentChatInput";
+import type { AgentSetupNoticeConfig } from "./AgentSetupNoticeBanner";
 import { ChatAccessDeniedAlert } from "./ChatAccessDeniedAlert";
 import type { ModelSelectorOption } from "./ChatElements";
 import { CompactOrgSelector } from "./ChatElements";
@@ -132,7 +126,7 @@ interface AgentCreateFormProps {
 	canCreateChat: boolean;
 	modelCatalog: TypesGen.ChatModelsResponse | null | undefined;
 	modelOptions: readonly ChatModelOption[];
-	agentSetupNotice?: ReactNode;
+	agentSetupNotice?: AgentSetupNoticeConfig;
 	isModelCatalogLoading: boolean;
 	modelConfigs: readonly TypesGen.ChatModelConfig[];
 	isModelConfigsLoading: boolean;
