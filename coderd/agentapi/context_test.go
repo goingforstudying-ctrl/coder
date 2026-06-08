@@ -83,19 +83,35 @@ func TestPushContextState(t *testing.T) {
 		require.True(t, resp.GetAccepted())
 	})
 
-	t.Run("RejectsSchemaVersionTooHigh", func(t *testing.T) {
+	t.Run("AcceptsFutureSchemaVersion", func(t *testing.T) {
 		t.Parallel()
 
-		api, _ := makeAPI(t)
-		// No DB expectations: validation runs before the transaction.
+		// schema_version is stored verbatim; the proto minor version is
+		// the real forward-compat lever. A higher value must NOT be
+		// rejected here; doing so would trip the rollout fail-loud path
+		// the constant is annotated as deprecated for.
+		api, dbm := makeAPI(t)
+		expectInTx(dbm)
+
+		dbm.EXPECT().GetLatestWorkspaceAgentContextSnapshot(gomock.Any(), agentID).
+			Return(database.WorkspaceAgentContextSnapshot{}, errNoRows())
+
+		var got database.UpsertWorkspaceAgentContextSnapshotParams
+		dbm.EXPECT().UpsertWorkspaceAgentContextSnapshot(gomock.Any(), gomock.Any()).
+			DoAndReturn(func(_ context.Context, arg database.UpsertWorkspaceAgentContextSnapshotParams) (database.WorkspaceAgentContextSnapshot, error) {
+				got = arg
+				return database.WorkspaceAgentContextSnapshot{}, nil
+			})
+		dbm.EXPECT().DeleteStaleWorkspaceAgentContextResources(gomock.Any(), gomock.Any()).Return(nil)
+
 		resp, err := api.PushContextState(context.Background(), &agentproto.PushContextStateRequest{
 			Version:       1,
 			SchemaVersion: agentapi.MaxContextSchemaVersion + 1,
 			Initial:       true,
 		})
-		require.Error(t, err)
-		require.Nil(t, resp)
-		require.Contains(t, err.Error(), "schema_version")
+		require.NoError(t, err)
+		require.True(t, resp.GetAccepted())
+		require.Equal(t, int64(agentapi.MaxContextSchemaVersion+1), got.SchemaVersion)
 	})
 
 	t.Run("RejectsEmptyAndDuplicateSources", func(t *testing.T) {

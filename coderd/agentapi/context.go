@@ -19,14 +19,20 @@ import (
 	"github.com/coder/quartz"
 )
 
-// MaxContextSchemaVersion is the highest on-wire schema_version the
-// coderd context push handler understands. Pushes carrying a higher
-// value are rejected with an explicit error so a forward incompatible
-// agent fails loudly during rollout instead of silently degrading.
+// MaxContextSchemaVersion was the highest on-wire schema_version the
+// coderd context push handler historically accepted; pushes carrying
+// a higher value were rejected as a forward incompatible safety
+// belt.
 //
-// Bump this whenever the wire shape of the context proto changes in
-// a way the handler must opt into; bumping it without coordinated
-// code changes breaks every newer agent.
+// Deprecated: schema_version on the wire is redundant with the
+// agent API minor version (tailnet/proto.CurrentMinor): any change
+// that affects how coderd must interpret a snapshot is also a
+// proto-shape change that gets a minor bump, and the existing
+// Unimplemented fallback covers old coderd. The handler still
+// stores the incoming schema_version verbatim so Phase 2 readers
+// have it if they ever need it, but it no longer gates writes.
+// Remove the constant and the proto field together once a follow-up
+// proto minor bump can drop schema_version cleanly.
 const MaxContextSchemaVersion uint64 = 1
 
 // ContextAPI implements the v2.10 PushContextState RPC. It persists
@@ -61,9 +67,9 @@ func (a *ContextAPI) PushContextState(ctx context.Context, req *agentproto.PushC
 	if req == nil {
 		return nil, xerrors.New("agentapi: PushContextState request is nil")
 	}
-	if req.SchemaVersion > MaxContextSchemaVersion {
-		return nil, xerrors.Errorf("agentapi: PushContextState schema_version %d exceeds supported maximum %d", req.SchemaVersion, MaxContextSchemaVersion)
-	}
+	// schema_version is stored verbatim but not validated; the proto
+	// minor version is the real forward-compat lever. See the
+	// MaxContextSchemaVersion doc.
 
 	rows, err := validateAndConvertContextResources(req.Resources)
 	if err != nil {
