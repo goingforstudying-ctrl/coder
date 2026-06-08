@@ -76,8 +76,8 @@ func (a *ContextAPI) PushContextState(ctx context.Context, req *agentproto.PushC
 		return nil, err
 	}
 
-	//nolint:gocritic // The push handler runs in the agent connection's authenticated context; the agent token role does not own the workspace_agent_context resource. We elevate to a narrow agent-context subject for the upsert + prune.
-	ctx = dbauthz.AsAgentContext(ctx)
+	//nolint:gocritic // We need permissions to write to the DB here and we are in the context of the agent.
+	ctx = dbauthz.AsProvisionerd(ctx)
 
 	clock := a.Clock
 	if clock == nil {

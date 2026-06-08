@@ -328,11 +328,6 @@ const (
 	ApiKeyScopeAiGatewayKeyCreate                  APIKeyScope = "ai_gateway_key:create"
 	ApiKeyScopeAiGatewayKeyDelete                  APIKeyScope = "ai_gateway_key:delete"
 	ApiKeyScopeAiGatewayKeyRead                    APIKeyScope = "ai_gateway_key:read"
-	ApiKeyScopeWorkspaceAgentContext               APIKeyScope = "workspace_agent_context:*"
-	ApiKeyScopeWorkspaceAgentContextCreate         APIKeyScope = "workspace_agent_context:create"
-	ApiKeyScopeWorkspaceAgentContextRead           APIKeyScope = "workspace_agent_context:read"
-	ApiKeyScopeWorkspaceAgentContextUpdate         APIKeyScope = "workspace_agent_context:update"
-	ApiKeyScopeWorkspaceAgentContextDelete         APIKeyScope = "workspace_agent_context:delete"
 )
 
 func (e *APIKeyScope) Scan(src interface{}) error {
@@ -601,12 +596,7 @@ func (e APIKeyScope) Valid() bool {
 		ApiKeyScopeAiGatewayKey,
 		ApiKeyScopeAiGatewayKeyCreate,
 		ApiKeyScopeAiGatewayKeyDelete,
-		ApiKeyScopeAiGatewayKeyRead,
-		ApiKeyScopeWorkspaceAgentContext,
-		ApiKeyScopeWorkspaceAgentContextCreate,
-		ApiKeyScopeWorkspaceAgentContextRead,
-		ApiKeyScopeWorkspaceAgentContextUpdate,
-		ApiKeyScopeWorkspaceAgentContextDelete:
+		ApiKeyScopeAiGatewayKeyRead:
 		return true
 	}
 	return false
@@ -844,11 +834,6 @@ func AllAPIKeyScopeValues() []APIKeyScope {
 		ApiKeyScopeAiGatewayKeyCreate,
 		ApiKeyScopeAiGatewayKeyDelete,
 		ApiKeyScopeAiGatewayKeyRead,
-		ApiKeyScopeWorkspaceAgentContext,
-		ApiKeyScopeWorkspaceAgentContextCreate,
-		ApiKeyScopeWorkspaceAgentContextRead,
-		ApiKeyScopeWorkspaceAgentContextUpdate,
-		ApiKeyScopeWorkspaceAgentContextDelete,
 	}
 }
 

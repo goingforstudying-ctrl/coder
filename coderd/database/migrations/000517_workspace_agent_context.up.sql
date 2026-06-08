@@ -63,12 +63,3 @@ COMMENT ON COLUMN workspace_agent_context_resources.size_bytes IS 'Original payl
 COMMENT ON COLUMN workspace_agent_context_resources.status IS 'Per-resource status. ok carries a populated body; oversize, unreadable, invalid, and excluded carry an empty body plus an error string.';
 COMMENT ON COLUMN workspace_agent_context_resources.error IS 'Per-resource error or warning string. Populated whenever status is non-ok; may also carry a non-fatal warning when status is ok.';
 COMMENT ON COLUMN workspace_agent_context_resources.source_path IS 'User-declared scan root that produced this resource. Empty for built-in scan roots.';
-
--- Add api_key_scope enum values for the new workspace_agent_context resource.
--- These scopes are internal-only; the system subjectAgentContext role is the
--- only consumer until later phases expose read paths to users.
-ALTER TYPE api_key_scope ADD VALUE IF NOT EXISTS 'workspace_agent_context:*';
-ALTER TYPE api_key_scope ADD VALUE IF NOT EXISTS 'workspace_agent_context:create';
-ALTER TYPE api_key_scope ADD VALUE IF NOT EXISTS 'workspace_agent_context:read';
-ALTER TYPE api_key_scope ADD VALUE IF NOT EXISTS 'workspace_agent_context:update';
-ALTER TYPE api_key_scope ADD VALUE IF NOT EXISTS 'workspace_agent_context:delete';

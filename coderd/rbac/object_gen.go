@@ -440,16 +440,6 @@ var (
 		Type: "workspace",
 	}
 
-	// ResourceWorkspaceAgentContext
-	// Valid Actions
-	//  - "ActionCreate" :: create workspace agent context snapshot rows
-	//  - "ActionDelete" :: delete workspace agent context snapshot rows
-	//  - "ActionRead" :: read workspace agent context snapshot rows
-	//  - "ActionUpdate" :: update workspace agent context snapshot rows
-	ResourceWorkspaceAgentContext = Object{
-		Type: "workspace_agent_context",
-	}
-
 	// ResourceWorkspaceAgentDevcontainers
 	// Valid Actions
 	//  - "ActionCreate" :: create workspace agent devcontainers
@@ -543,7 +533,6 @@ func AllResources() []Objecter {
 		ResourceUserSkill,
 		ResourceWebpushSubscription,
 		ResourceWorkspace,
-		ResourceWorkspaceAgentContext,
 		ResourceWorkspaceAgentDevcontainers,
 		ResourceWorkspaceAgentResourceMonitor,
 		ResourceWorkspaceDormant,

@@ -1176,27 +1176,6 @@ func TestRolePermissions(t *testing.T) {
 			},
 		},
 		{
-			// workspace_agent_context is written by the v2.10
-			// PushContextState handler under the subjectAgentContext
-			// system role (covered by dbauthz unit tests). No human
-			// role currently reads or writes it; future read paths
-			// (chat hydration, sources drawer) will extend this entry.
-			Name:     "WorkspaceAgentContext",
-			Actions:  []policy.Action{policy.ActionCreate, policy.ActionRead, policy.ActionUpdate, policy.ActionDelete},
-			Resource: rbac.ResourceWorkspaceAgentContext,
-			AuthorizeMap: map[bool][]hasAuthSubjects{
-				true: {owner},
-				false: {
-					memberMe, agentsAccessUser,
-					orgAdmin, otherOrgAdmin,
-					orgAuditor, otherOrgAuditor,
-					templateAdmin, orgTemplateAdmin, otherOrgTemplateAdmin,
-					userAdmin, orgUserAdmin, otherOrgUserAdmin,
-					orgWorkspaceAccessUser,
-				},
-			},
-		},
-		{
 			Name:     "ConnectionLogs",
 			Actions:  []policy.Action{policy.ActionRead, policy.ActionUpdate},
 			Resource: rbac.ResourceConnectionLog,

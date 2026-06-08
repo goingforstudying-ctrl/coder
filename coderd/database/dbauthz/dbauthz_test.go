@@ -5907,7 +5907,7 @@ func (s *MethodTestSuite) TestWorkspaceAgentContext() {
 			WorkspaceAgentID: uuid.New(),
 		}
 		dbm.EXPECT().UpsertWorkspaceAgentContextSnapshot(gomock.Any(), arg).Return(database.WorkspaceAgentContextSnapshot{}, nil).AnyTimes()
-		check.Args(arg).Asserts(rbac.ResourceWorkspaceAgentContext, policy.ActionUpdate)
+		check.Args(arg).Asserts(rbac.ResourceSystem, policy.ActionUpdate)
 	}))
 	s.Run("UpsertWorkspaceAgentContextResource", s.Mocked(func(dbm *dbmock.MockStore, _ *gofakeit.Faker, check *expects) {
 		arg := database.UpsertWorkspaceAgentContextResourceParams{
@@ -5918,7 +5918,7 @@ func (s *MethodTestSuite) TestWorkspaceAgentContext() {
 			Status:           "ok",
 		}
 		dbm.EXPECT().UpsertWorkspaceAgentContextResource(gomock.Any(), arg).Return(database.WorkspaceAgentContextResource{}, nil).AnyTimes()
-		check.Args(arg).Asserts(rbac.ResourceWorkspaceAgentContext, policy.ActionUpdate)
+		check.Args(arg).Asserts(rbac.ResourceSystem, policy.ActionUpdate)
 	}))
 	s.Run("DeleteStaleWorkspaceAgentContextResources", s.Mocked(func(dbm *dbmock.MockStore, _ *gofakeit.Faker, check *expects) {
 		arg := database.DeleteStaleWorkspaceAgentContextResourcesParams{
@@ -5926,17 +5926,17 @@ func (s *MethodTestSuite) TestWorkspaceAgentContext() {
 			ActiveSources:    []string{"/workspace/AGENTS.md"},
 		}
 		dbm.EXPECT().DeleteStaleWorkspaceAgentContextResources(gomock.Any(), arg).Return(nil).AnyTimes()
-		check.Args(arg).Asserts(rbac.ResourceWorkspaceAgentContext, policy.ActionDelete)
+		check.Args(arg).Asserts(rbac.ResourceSystem, policy.ActionDelete)
 	}))
 	s.Run("GetLatestWorkspaceAgentContextSnapshot", s.Mocked(func(dbm *dbmock.MockStore, _ *gofakeit.Faker, check *expects) {
 		agentID := uuid.New()
 		dbm.EXPECT().GetLatestWorkspaceAgentContextSnapshot(gomock.Any(), agentID).Return(database.WorkspaceAgentContextSnapshot{}, nil).AnyTimes()
-		check.Args(agentID).Asserts(rbac.ResourceWorkspaceAgentContext, policy.ActionRead)
+		check.Args(agentID).Asserts(rbac.ResourceSystem, policy.ActionRead)
 	}))
 	s.Run("ListWorkspaceAgentContextResources", s.Mocked(func(dbm *dbmock.MockStore, _ *gofakeit.Faker, check *expects) {
 		agentID := uuid.New()
 		dbm.EXPECT().ListWorkspaceAgentContextResources(gomock.Any(), agentID).Return(nil, nil).AnyTimes()
-		check.Args(agentID).Asserts(rbac.ResourceWorkspaceAgentContext, policy.ActionRead)
+		check.Args(agentID).Asserts(rbac.ResourceSystem, policy.ActionRead)
 	}))
 }
 

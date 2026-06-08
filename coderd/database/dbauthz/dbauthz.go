@@ -399,28 +399,6 @@ var (
 		Scope: rbac.ScopeAll,
 	}.WithCachedASTValue()
 
-	subjectAgentContext = rbac.Subject{
-		Type:         rbac.SubjectTypeAgentContext,
-		FriendlyName: "Agent Context",
-		ID:           uuid.Nil.String(),
-		Roles: rbac.Roles([]rbac.Role{
-			{
-				Identifier:  rbac.RoleIdentifier{Name: "agentcontext"},
-				DisplayName: "Agent Context",
-				Site: rbac.Permissions(map[string][]policy.Action{
-					// The agent context push handler writes (insert,
-					// upsert, delete-stale) snapshot rows. Read is
-					// required for the version comparison inside the
-					// transaction.
-					rbac.ResourceWorkspaceAgentContext.Type: {policy.ActionCreate, policy.ActionRead, policy.ActionUpdate, policy.ActionDelete},
-				}),
-				User:    []rbac.Permission{},
-				ByOrgID: map[string]rbac.OrgPermissions{},
-			},
-		}),
-		Scope: rbac.ScopeAll,
-	}.WithCachedASTValue()
-
 	subjectSubAgentAPI = func(userID uuid.UUID, orgID uuid.UUID) rbac.Subject {
 		return rbac.Subject{
 			Type:         rbac.SubjectTypeSubAgentAPI,
@@ -833,14 +811,6 @@ func AsNotifier(ctx context.Context) context.Context {
 // updating resource monitors.
 func AsResourceMonitor(ctx context.Context) context.Context {
 	return As(ctx, subjectResourceMonitor)
-}
-
-// AsAgentContext returns a context with an actor that has permissions
-// required for upserting and pruning workspace_agent_context_snapshots
-// and workspace_agent_context_resources rows. Used by the v2.10
-// PushContextState handler.
-func AsAgentContext(ctx context.Context) context.Context {
-	return As(ctx, subjectAgentContext)
 }
 
 // AsSubAgentAPI returns a context with an actor that has permissions required for
@@ -2347,7 +2317,7 @@ func (q *querier) DeleteRuntimeConfig(ctx context.Context, key string) error {
 }
 
 func (q *querier) DeleteStaleWorkspaceAgentContextResources(ctx context.Context, arg database.DeleteStaleWorkspaceAgentContextResourcesParams) error {
-	if err := q.authorizeContext(ctx, policy.ActionDelete, rbac.ResourceWorkspaceAgentContext); err != nil {
+	if err := q.authorizeContext(ctx, policy.ActionDelete, rbac.ResourceSystem); err != nil {
 		return err
 	}
 	return q.db.DeleteStaleWorkspaceAgentContextResources(ctx, arg)
@@ -3694,7 +3664,7 @@ func (q *querier) GetLatestCryptoKeyByFeature(ctx context.Context, feature datab
 }
 
 func (q *querier) GetLatestWorkspaceAgentContextSnapshot(ctx context.Context, workspaceAgentID uuid.UUID) (database.WorkspaceAgentContextSnapshot, error) {
-	if err := q.authorizeContext(ctx, policy.ActionRead, rbac.ResourceWorkspaceAgentContext); err != nil {
+	if err := q.authorizeContext(ctx, policy.ActionRead, rbac.ResourceSystem); err != nil {
 		return database.WorkspaceAgentContextSnapshot{}, err
 	}
 	return q.db.GetLatestWorkspaceAgentContextSnapshot(ctx, workspaceAgentID)
@@ -6427,7 +6397,7 @@ func (q *querier) ListUserSkillMetadataByUserID(ctx context.Context, userID uuid
 }
 
 func (q *querier) ListWorkspaceAgentContextResources(ctx context.Context, workspaceAgentID uuid.UUID) ([]database.WorkspaceAgentContextResource, error) {
-	if err := q.authorizeContext(ctx, policy.ActionRead, rbac.ResourceWorkspaceAgentContext); err != nil {
+	if err := q.authorizeContext(ctx, policy.ActionRead, rbac.ResourceSystem); err != nil {
 		return nil, err
 	}
 	return q.db.ListWorkspaceAgentContextResources(ctx, workspaceAgentID)
@@ -8589,14 +8559,14 @@ func (q *querier) UpsertWebpushVAPIDKeys(ctx context.Context, arg database.Upser
 }
 
 func (q *querier) UpsertWorkspaceAgentContextResource(ctx context.Context, arg database.UpsertWorkspaceAgentContextResourceParams) (database.WorkspaceAgentContextResource, error) {
-	if err := q.authorizeContext(ctx, policy.ActionUpdate, rbac.ResourceWorkspaceAgentContext); err != nil {
+	if err := q.authorizeContext(ctx, policy.ActionUpdate, rbac.ResourceSystem); err != nil {
 		return database.WorkspaceAgentContextResource{}, err
 	}
 	return q.db.UpsertWorkspaceAgentContextResource(ctx, arg)
 }
 
 func (q *querier) UpsertWorkspaceAgentContextSnapshot(ctx context.Context, arg database.UpsertWorkspaceAgentContextSnapshotParams) (database.WorkspaceAgentContextSnapshot, error) {
-	if err := q.authorizeContext(ctx, policy.ActionUpdate, rbac.ResourceWorkspaceAgentContext); err != nil {
+	if err := q.authorizeContext(ctx, policy.ActionUpdate, rbac.ResourceSystem); err != nil {
 		return database.WorkspaceAgentContextSnapshot{}, err
 	}
 	return q.db.UpsertWorkspaceAgentContextSnapshot(ctx, arg)
