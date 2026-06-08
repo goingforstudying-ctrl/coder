@@ -726,6 +726,11 @@ export type APIKeyScope =
 	| "webpush_subscription:create"
 	| "webpush_subscription:delete"
 	| "webpush_subscription:read"
+	| "workspace_agent_context:*"
+	| "workspace_agent_context:create"
+	| "workspace_agent_context:delete"
+	| "workspace_agent_context:read"
+	| "workspace_agent_context:update"
 	| "workspace_agent_devcontainers:*"
 	| "workspace_agent_devcontainers:create"
 	| "workspace_agent_resource_monitor:*"
@@ -960,6 +965,11 @@ export const APIKeyScopes: APIKeyScope[] = [
 	"webpush_subscription:create",
 	"webpush_subscription:delete",
 	"webpush_subscription:read",
+	"workspace_agent_context:*",
+	"workspace_agent_context:create",
+	"workspace_agent_context:delete",
+	"workspace_agent_context:read",
+	"workspace_agent_context:update",
 	"workspace_agent_devcontainers:*",
 	"workspace_agent_devcontainers:create",
 	"workspace_agent_resource_monitor:*",
@@ -6992,6 +7002,7 @@ export type RBACResource =
 	| "webpush_subscription"
 	| "*"
 	| "workspace"
+	| "workspace_agent_context"
 	| "workspace_agent_devcontainers"
 	| "workspace_agent_resource_monitor"
 	| "workspace_dormant"
@@ -7044,6 +7055,7 @@ export const RBACResources: RBACResource[] = [
 	"webpush_subscription",
 	"*",
 	"workspace",
+	"workspace_agent_context",
 	"workspace_agent_devcontainers",
 	"workspace_agent_resource_monitor",
 	"workspace_dormant",

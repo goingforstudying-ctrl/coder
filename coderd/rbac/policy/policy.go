@@ -371,6 +371,14 @@ var RBACPermissions = map[string]PermissionDefinition{
 			ActionCreate: "create workspace agent devcontainers",
 		},
 	},
+	"workspace_agent_context": {
+		Actions: map[Action]ActionDefinition{
+			ActionCreate: "create workspace agent context snapshot rows",
+			ActionRead:   "read workspace agent context snapshot rows",
+			ActionUpdate: "update workspace agent context snapshot rows",
+			ActionDelete: "delete workspace agent context snapshot rows",
+		},
+	},
 	"user_secret": {
 		Actions: map[Action]ActionDefinition{
 			ActionCreate: "create a user secret",

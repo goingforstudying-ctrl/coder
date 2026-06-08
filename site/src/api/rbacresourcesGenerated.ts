@@ -250,6 +250,12 @@ export const RBACResourceActions: Partial<
 		update: "edit workspace settings (scheduling, permissions, parameters)",
 		update_agent: "update an existing workspace agent",
 	},
+	workspace_agent_context: {
+		create: "create workspace agent context snapshot rows",
+		delete: "delete workspace agent context snapshot rows",
+		read: "read workspace agent context snapshot rows",
+		update: "update workspace agent context snapshot rows",
+	},
 	workspace_agent_devcontainers: {
 		create: "create workspace agent devcontainers",
 	},

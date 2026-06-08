@@ -53,4 +53,6 @@ const (
 	CheckUserSkillsDescriptionSize                    CheckConstraint = "user_skills_description_size"                        // user_skills
 	CheckUserSkillsNameFormat                         CheckConstraint = "user_skills_name_format"                             // user_skills
 	CheckUserSkillsNameSize                           CheckConstraint = "user_skills_name_size"                               // user_skills
+	CheckWorkspaceAgentContextResourcesBodyKindChk    CheckConstraint = "workspace_agent_context_resources_body_kind_chk"     // workspace_agent_context_resources
+	CheckWorkspaceAgentContextResourcesStatusChk      CheckConstraint = "workspace_agent_context_resources_status_chk"        // workspace_agent_context_resources
 )
