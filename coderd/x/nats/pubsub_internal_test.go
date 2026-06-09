@@ -2,11 +2,9 @@ package nats
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/url"
 	"slices"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -163,120 +161,54 @@ func Test_Pubsub_buildConnHandlers(t *testing.T) {
 		matchingEvent := subjectForConn(t, ps.subscribePool, &subConnA, "disconnect_match")
 		otherEvent := subjectForConn(t, ps.subscribePool, &subConnB, "disconnect_other")
 
-		newLocal := func(event string) *localSub {
+		newLocal := func(event string, errCh chan error) *localSub {
+			queue := pubsub.NewMsgQueue(ctx, nil, func(_ context.Context, _ []byte, err error) {
+				testutil.RequireSend(ctx, t, errCh, err)
+			})
+			// normally, closing the pubsub would clean this, but we don't actually close pubsub in this test because
+			// it uses fake connections. So, we need to close these to avoid leaking goroutines.
+			t.Cleanup(func() {
+				queue.Close()
+			})
 			return &localSub{
-				event:      event,
-				dropSignal: make(chan struct{}, 1),
+				event: event,
+				queue: queue,
 			}
 		}
 
-		matchingSub := newLocal(matchingEvent)
-		otherSub := newLocal(otherEvent)
-		ps.subscriptions[matchingSub.event] = &natsSub{localSubs: map[*localSub]struct{}{matchingSub: {}}}
-		ps.subscriptions[otherSub.event] = &natsSub{localSubs: map[*localSub]struct{}{otherSub: {}}}
+		matchErr := make(chan error)
+		matchingSub := newLocal(matchingEvent, matchErr)
+		otherErr := make(chan error)
+		otherSub := newLocal(otherEvent, otherErr)
+		ps.subscriptions[matchingSub.event] = &groupSub{localSubs: map[*localSub]struct{}{matchingSub: {}}}
+		ps.subscriptions[otherSub.event] = &groupSub{localSubs: map[*localSub]struct{}{otherSub: {}}}
 
 		handlers := ps.buildConnHandlers()
 		handlers.disconnectErr(&subConnA, xerrors.New("disconnect"))
 
+		err := testutil.RequireReceive(ctx, t, matchErr)
+		require.ErrorIs(t, err, pubsub.ErrDroppedMessages)
 		select {
-		case <-matchingSub.dropSignal:
-		default:
-			require.Fail(t, "matching subscriber did not receive drop signal")
-		}
-		select {
-		case <-otherSub.dropSignal:
+		case <-otherErr:
 			require.Fail(t, "non-matching subscriber received drop signal")
 		default:
 		}
 
 		handlers.disconnectErr(&pubConn, xerrors.New("publisher disconnect"))
 		select {
-		case <-otherSub.dropSignal:
+		case <-otherErr:
 			require.Fail(t, "publisher connection disconnect signaled subscriber")
 		default:
 		}
 	})
 }
 
-func Test_localSub_init(t *testing.T) {
+func Test_localSub(t *testing.T) {
 	t.Parallel()
-
-	t.Run("SerializesCallbacks", func(t *testing.T) {
-		t.Parallel()
-		ctx := testutil.Context(t, testutil.WaitShort)
-
-		dataStarted := make(chan struct{})
-		dropDelivered := make(chan struct{})
-		release := make(chan struct{})
-		var dataOnce sync.Once
-		var dropOnce sync.Once
-		var releaseOnce sync.Once
-		var active atomic.Int64
-		var concurrent atomic.Bool
-
-		s := &localSub{
-			ctx:    ctx,
-			cancel: func() {},
-			listener: func(_ context.Context, _ []byte, ferr error) {
-				if active.Add(1) != 1 {
-					concurrent.Store(true)
-				}
-				defer active.Add(-1)
-
-				if errors.Is(ferr, pubsub.ErrDroppedMessages) {
-					dropOnce.Do(func() { close(dropDelivered) })
-					return
-				}
-
-				dataOnce.Do(func() { close(dataStarted) })
-				<-release
-			},
-			queue:      make(chan []byte, 1),
-			dropSignal: make(chan struct{}, 1),
-		}
-		s.init()
-		t.Cleanup(func() {
-			releaseOnce.Do(func() { close(release) })
-			s.close()
-		})
-
-		s.enqueue([]byte("data"))
-		require.Eventually(t, func() bool {
-			select {
-			case <-dataStarted:
-				return true
-			default:
-				return false
-			}
-		}, testutil.WaitShort, testutil.IntervalFast)
-
-		s.signalDrop()
-		require.Never(t, func() bool {
-			select {
-			case <-dropDelivered:
-				return true
-			default:
-				return false
-			}
-		}, testutil.IntervalMedium, testutil.IntervalFast,
-			"drop callback must wait for the blocked data callback")
-		require.False(t, concurrent.Load(), "listener callback ran concurrently")
-
-		releaseOnce.Do(func() { close(release) })
-		require.Eventually(t, func() bool {
-			select {
-			case <-dropDelivered:
-				return true
-			default:
-				return false
-			}
-		}, testutil.WaitShort, testutil.IntervalFast)
-		require.False(t, concurrent.Load(), "listener callback ran concurrently")
-	})
 
 	t.Run("SameSubjectSlowListenerDoesNotBlockPeer", func(t *testing.T) {
 		t.Parallel()
-		logger := slogtest.Make(t, nil)
+		logger := testutil.Logger(t)
 		ctx := testutil.Context(t, testutil.WaitLong)
 		ps, err := New(ctx, logger, defaultTestOptions())
 		require.NoError(t, err)
@@ -329,6 +261,10 @@ func Test_localSub_init(t *testing.T) {
 		require.Len(t, ps.subscribePool, 1)
 		require.False(t, ps.subscribePool[0].IsClosed(), "subConn must not be closed by slow consumer")
 		require.True(t, ps.subscribePool[0].IsConnected(), "subConn must stay connected")
+
+		err = ps.Close()
+		require.NoError(t, err)
+		require.Empty(t, ps.subscriptions)
 	})
 }
 

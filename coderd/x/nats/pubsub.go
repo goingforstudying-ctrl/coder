@@ -122,13 +122,17 @@ type Pubsub struct {
 
 	// subscriptions coalesces concurrent local subscribers on the
 	// same subject onto a single underlying *natsgo.Subscription.
-	subscriptions map[string]*natsSub
+	subscriptions map[string]*groupSub
 	closeOnce     sync.Once
 
 	// ctx is canceled by Close while holding p.mu so subscriber state
 	// cleanup observes the canceled context.
 	ctx    context.Context
 	cancel context.CancelFunc
+
+	// unsubscribeRoutines tracks outstanding unsubscribe calls while closing, to ensure they all complete before we
+	// start tearing down connections.
+	unsubscribeRoutines sync.WaitGroup
 
 	clusterMu     sync.Mutex
 	clustered     bool
@@ -139,19 +143,23 @@ type Pubsub struct {
 	peerRefresh chan struct{}
 }
 
-// natsSub maps to one underlying *natsgo.Subscription. The first
+// groupSub maps to one underlying *natsgo.Subscription. The first
 // local subscriber creates it; later local subscribers attach to it.
 // When the last local subscriber detaches, the NATS subscription is
 // unsubscribed.
-type natsSub struct {
-	// sub is set before this natsSub is published in Pubsub.subscriptions
-	// and is immutable after that.
-	sub *natsgo.Subscription
-
+type groupSub struct {
+	parent *Pubsub
+	event  string
 	// mu guards localSubs.
 	mu sync.Mutex
 	// localSubs are the local subscribers attached to this NATS subscription.
 	localSubs map[*localSub]struct{}
+
+	// closed when the initial subscribe completes
+	subscribeDone chan struct{}
+	// either sub or err are non-nil after subscribeDone is closed
+	sub *natsgo.Subscription
+	err error
 
 	// dropMu keeps async error accounting independent from listener fan-out.
 	dropMu sync.Mutex
@@ -160,26 +168,13 @@ type natsSub struct {
 }
 
 // localSub is the local handle returned by Subscribe /
-// SubscribeWithErr. Each local subscriber gets its own bounded inbox
-// and dispatcher goroutine so one slow listener cannot block peers on
-// the same subject.
+// SubscribeWithErr.
 type localSub struct {
-	cancelOnce sync.Once
-
-	ctx context.Context
-
-	event    string
-	listener pubsub.ListenerWithErr
-
-	// queue is the per-listener data fan-out inbox. The shared NATS
-	// callback enqueues non-blockingly; on overflow the message is
-	// dropped and a drop signal is raised.
-	queue chan []byte
-	// dropSignal is a size-1 buffered channel that coalesces drop
-	// notifications from local overflow and NATS slow-consumer
-	// broadcasts onto a single pending wake.
-	dropSignal chan struct{}
-	cancel     context.CancelFunc
+	event     string
+	queue     *pubsub.MsgQueue
+	group     *groupSub
+	parent    *Pubsub
+	closeOnce sync.Once
 }
 
 // Compile-time assertion that *Pubsub satisfies the pubsub.Pubsub interface.
@@ -191,7 +186,7 @@ func newPubsub(ctx context.Context, logger slog.Logger, opts Options) *Pubsub {
 	return &Pubsub{
 		logger:        logger,
 		opts:          opts,
-		subscriptions: make(map[string]*natsSub),
+		subscriptions: make(map[string]*groupSub),
 		ctx:           ctx,
 		cancel:        cancel,
 		peerFetcher:   opts.PeerFetcher,
@@ -362,12 +357,7 @@ func (p *Pubsub) Flush() error {
 // such as ErrDroppedMessages are silently ignored, mirroring the
 // legacy pubsub Listener semantics.
 func (p *Pubsub) Subscribe(event string, listener pubsub.Listener) (cancel func(), err error) {
-	return p.SubscribeWithErr(event, func(ctx context.Context, msg []byte, err error) {
-		if err != nil {
-			return
-		}
-		listener(ctx, msg)
-	})
+	return p.subscribeQueue(event, pubsub.NewMsgQueue(context.Background(), listener, nil))
 }
 
 // SubscribeWithErr subscribes a ListenerWithErr to the given event
@@ -377,191 +367,57 @@ func (p *Pubsub) Subscribe(event string, listener pubsub.Listener) (cancel func(
 // per-listener bounded inboxes so a slow listener cannot block its
 // peers.
 func (p *Pubsub) SubscribeWithErr(event string, listener pubsub.ListenerWithErr) (cancel func(), err error) {
-	s, err := p.addSubscriber(event, listener)
-	if err != nil {
-		return nil, err
-	}
-
-	cancelFn := func() {
-		s.close()
-		p.unsubscribeLocal(s)
-	}
-	return cancelFn, nil
+	return p.subscribeQueue(event, pubsub.NewMsgQueue(context.Background(), nil, listener))
 }
 
-// listenerQueueSize returns the per-listener inbox capacity. A
-// positive PendingLimits.Msgs sets the cap (giving callers a knob to
-// trigger local-overflow drops since coalescing makes NATS-level
-// slow-consumer signals rare). Otherwise the default is used.
-func listenerQueueSize(in PendingLimits) int {
-	if in.Msgs > 0 {
-		return in.Msgs
-	}
-	return defaultListenerQueueSize
-}
+// subscribeQueue subscribes the given MsgQueue for the given event.
+func (p *Pubsub) subscribeQueue(event string, newQ *pubsub.MsgQueue) (cancel func(), err error) {
+	defer func() {
+		if err != nil {
+			// If we hit an error, close the queue so we don't leak its goroutine.
+			newQ.Close()
+		}
+	}()
 
-const defaultListenerQueueSize = 1024
-
-// addSubscriber creates a local subscriber and attaches it to the natsSub
-// for event. New natsSub entries are published only after NATS setup succeeds.
-func (p *Pubsub) addSubscriber(event string, listener pubsub.ListenerWithErr) (*localSub, error) {
-	ctx, cancel := context.WithCancel(p.ctx)
-	s := &localSub{
-		ctx:        ctx,
-		cancel:     cancel,
-		event:      event,
-		listener:   listener,
-		queue:      make(chan []byte, listenerQueueSize(p.opts.PendingLimits)),
-		dropSignal: make(chan struct{}, 1),
-	}
-	s.init()
-
-	cleanupSub, err := func() (*natsgo.Subscription, error) {
+	l, g := func() (*localSub, *groupSub) {
 		p.mu.Lock()
 		defer p.mu.Unlock()
 
 		if p.ctx.Err() != nil {
-			return nil, errClosed
+			return nil, erroredGroupSub(errClosed)
 		}
 
-		nsub, ok := p.subscriptions[event]
-		if ok {
-			nsub.mu.Lock()
-			nsub.localSubs[s] = struct{}{}
-			nsub.mu.Unlock()
-			return nsub.sub, nil
-		}
-
-		nsub = &natsSub{
-			localSubs: map[*localSub]struct{}{
-				s: {},
-			},
-		}
-
-		subConn := pickConn(p.subscribePool, event)
-		natsSubscription, err := subConn.Subscribe(event, nsub.handleMessage)
-		if err != nil {
-			return nil, xerrors.Errorf("subscribe: %w", err)
-		}
-		nsub.sub = natsSubscription
-
-		// Flush the SUB to the server so a publish issued immediately
-		// after Subscribe returns cannot race ahead of registration.
-		if err := subConn.Flush(); err != nil {
-			return natsSubscription, xerrors.Errorf("flush subscribe: %w", err)
-		}
-		limits := defaultPendingLimits(p.opts.PendingLimits)
-		if err := natsSubscription.SetPendingLimits(limits.Msgs, limits.Bytes); err != nil {
-			return natsSubscription, xerrors.Errorf("set pending limits: %w", err)
-		}
-
-		p.subscriptions[event] = nsub
-		return natsSubscription, nil
-	}()
-	if err != nil {
-		s.close()
-		if cleanupSub != nil {
-			if unsubscribeErr := cleanupSub.Unsubscribe(); unsubscribeErr != nil {
-				err = errors.Join(err, xerrors.Errorf("unsubscribe: %w", unsubscribeErr))
+		var (
+			gSub *groupSub
+			ok   bool
+		)
+		gSub, ok = p.subscriptions[event]
+		if !ok {
+			gSub = &groupSub{
+				parent:        p,
+				event:         event,
+				localSubs:     make(map[*localSub]struct{}),
+				subscribeDone: make(chan struct{}),
 			}
+			go gSub.subscribe(event)
+			p.subscriptions[event] = gSub
 		}
+		lSub := &localSub{
+			event:  event,
+			queue:  newQ,
+			group:  gSub,
+			parent: p,
+		}
+		gSub.mu.Lock()
+		defer gSub.mu.Unlock()
+		gSub.localSubs[lSub] = struct{}{}
+		return lSub, gSub
+	}()
+
+	if err := g.wait(); err != nil {
 		return nil, err
 	}
-	return s, nil
-}
-
-// unsubscribeLocal removes s from its natsSub. If s was the last
-// listener, it also removes and unsubscribes the underlying NATS
-// subscription.
-func (p *Pubsub) unsubscribeLocal(s *localSub) {
-	natsSub := func() *natsgo.Subscription {
-		p.mu.Lock()
-		defer p.mu.Unlock()
-
-		nsub := p.subscriptions[s.event]
-		if nsub == nil {
-			return nil
-		}
-
-		nsub.mu.Lock()
-		defer nsub.mu.Unlock()
-		if _, tracked := nsub.localSubs[s]; !tracked {
-			return nil
-		}
-		delete(nsub.localSubs, s)
-		if len(nsub.localSubs) > 0 {
-			return nil
-		}
-		// Last listener: remove the nsub entry so a new Subscribe to this
-		// subject creates a fresh underlying subscription.
-		delete(p.subscriptions, s.event)
-		return nsub.sub
-	}()
-	if natsSub != nil {
-		_ = natsSub.Unsubscribe()
-	}
-}
-
-// handleMessage handles messages for the shared subscription. Each
-// enqueue is non-blocking and does not call user code, so one slow
-// listener cannot stall the NATS delivery goroutine.
-//
-// Zero-copy fan-out: the same msg.Data slice is delivered to every
-// local listener without cloning. Listeners on a coalesced subject MUST
-// treat the delivered bytes as immutable.
-func (nsub *natsSub) handleMessage(msg *natsgo.Msg) {
-	nsub.mu.Lock()
-	defer nsub.mu.Unlock()
-
-	for s := range nsub.localSubs {
-		s.enqueue(msg.Data)
-	}
-}
-
-// init starts the per-listener delivery goroutine.
-func (s *localSub) init() {
-	go func() {
-		for {
-			select {
-			case <-s.ctx.Done():
-				return
-			case data := <-s.queue:
-				s.listener(s.ctx, data, nil)
-			case <-s.dropSignal:
-				s.listener(s.ctx, nil, pubsub.ErrDroppedMessages)
-			}
-		}
-	}()
-}
-
-// close cancels local delivery without waiting for callbacks.
-func (s *localSub) close() {
-	s.cancelOnce.Do(func() {
-		if s.cancel != nil {
-			s.cancel()
-		}
-	})
-}
-
-// enqueue non-blockingly sends data onto s.queue. On overflow it drops the
-// message and raises a drop signal so pubsub.ErrDroppedMessages is surfaced.
-// If s is canceled the message is silently dropped.
-func (s *localSub) enqueue(data []byte) {
-	select {
-	case s.queue <- data:
-	default:
-		s.signalDrop()
-	}
-}
-
-// signalDrop pushes onto dropSignal without blocking. Multiple drops
-// between dispatcher dequeues coalesce into a single pending signal, so
-// the listener observes one ErrDroppedMessages per drop wave.
-func (s *localSub) signalDrop() {
-	select {
-	case s.dropSignal <- struct{}{}:
-	default:
-	}
+	return l.close, nil
 }
 
 // signalSubscribersDroppedForConn signals local subscribers assigned to conn.
@@ -596,7 +452,7 @@ func (p *Pubsub) handleAsyncError(sub *natsgo.Subscription, err error) {
 		return
 	}
 	p.mu.Lock()
-	var nsub *natsSub
+	var nsub *groupSub
 	for _, candidate := range p.subscriptions {
 		if candidate.sub == sub {
 			nsub = candidate
@@ -614,7 +470,7 @@ func (p *Pubsub) handleAsyncError(sub *natsgo.Subscription, err error) {
 // local listener on nsub when NATS reports a new drop delta. The
 // slow-consumer signal is per-subscription and cannot be narrowed to a
 // single local listener.
-func (p *Pubsub) handleSlowSubscriber(nsub *natsSub) {
+func (p *Pubsub) handleSlowSubscriber(nsub *groupSub) {
 	nsub.dropMu.Lock()
 	dropped, err := nsub.sub.Dropped()
 	if err != nil {
@@ -654,49 +510,47 @@ func (p *Pubsub) handleSlowSubscriber(nsub *natsSub) {
 func (p *Pubsub) Close() error {
 	p.closeOnce.Do(func() {
 		p.mu.Lock()
+		p.logger.Debug(p.ctx, "closing pubsub")
 		// Cancel while holding p.mu so subscriber state cleanup below
 		// observes the canceled context.
 		p.cancel()
 		var subs []*localSub
-		shareds := make([]*natsSub, 0, len(p.subscriptions))
 		for _, ss := range p.subscriptions {
-			shareds = append(shareds, ss)
-			ss.mu.Lock()
+			// here we don't need to hold the ss.mu lock because we are not mutating anything and holding the p.mu
+			// blocks any new subscriptions.
 			for s := range ss.localSubs {
 				subs = append(subs, s)
-				delete(ss.localSubs, s)
 			}
-			ss.mu.Unlock()
 		}
-		clear(p.subscriptions)
 		p.mu.Unlock()
 
-		// Unsubscribe shared subscriptions before closing connections.
-		for _, ss := range shareds {
-			if ss.sub != nil {
-				_ = ss.sub.Unsubscribe()
-			}
-		}
-
-		// Signal per-listener goroutines without waiting for callbacks.
 		for _, s := range subs {
 			s.close()
 		}
+		p.logger.Debug(p.ctx, "closed all local subscriptions")
+		// Wait for any outstanding unsubscribe routines, kicked off above or before the Close().
+		p.unsubscribeRoutines.Wait()
+		p.logger.Debug(p.ctx, "unsubscribe routines done")
 
 		for _, nc := range p.subscribePool {
 			if nc != nil {
 				nc.Close()
 			}
 		}
+		p.logger.Debug(p.ctx, "subscribe pool connections closed")
 		for _, nc := range p.publishPool {
 			if nc != nil {
 				nc.Close()
 			}
 		}
+		p.logger.Debug(p.ctx, "publish pool connections closed")
 
 		if p.Server != nil {
 			p.Server.Shutdown()
 			p.Server.WaitForShutdown()
+			p.logger.Info(p.ctx, "nats server shut down")
+		} else {
+			p.logger.Debug(p.ctx, "nats server was never started")
 		}
 	})
 	return nil
@@ -714,4 +568,115 @@ func pickConn(pool []*natsgo.Conn, subject string) *natsgo.Conn {
 	_, _ = h.Write([]byte(subject))
 	n := uint32(len(pool)) //nolint:gosec // pool size bounded by Options.{Publish,Subscribe}Conns
 	return pool[h.Sum32()%n]
+}
+
+// erroredGroupSub returns a groupSub that shows an error rather than an active subscription.
+func erroredGroupSub(err error) *groupSub {
+	c := make(chan struct{})
+	close(c)
+	return &groupSub{
+		subscribeDone: c,
+		err:           err,
+	}
+}
+
+// handleMessage handles messages for the shared subscription. Each
+// enqueue is non-blocking and does not call user code, so one slow
+// listener cannot stall the NATS delivery goroutine.
+//
+// Zero-copy fan-out: the same msg.Data slice is delivered to every
+// local listener without cloning. Listeners on a coalesced subject MUST
+// treat the delivered bytes as immutable.
+func (g *groupSub) handleMessage(msg *natsgo.Msg) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	for l := range g.localSubs {
+		l.queue.Enqueue(msg.Data)
+	}
+}
+
+func (g *groupSub) wait() error {
+	<-g.subscribeDone
+	return g.err
+}
+
+func (g *groupSub) subscribe(event string) {
+	defer func() {
+		close(g.subscribeDone)
+	}()
+	logger := g.parent.logger.With(slog.F("event", event))
+	logger.Debug(context.Background(), "subscribing on nats")
+	subConn := pickConn(g.parent.subscribePool, event)
+	natsSubscription, err := subConn.Subscribe(event, g.handleMessage)
+	if err != nil {
+		g.err = xerrors.Errorf("subscribe: %w", err)
+		return
+	}
+	g.sub = natsSubscription
+
+	// Flush the SUB to the server so a publish issued immediately
+	// after Subscribe returns cannot race ahead of registration.
+	if err := subConn.Flush(); err != nil {
+		g.err = xerrors.Errorf("flush subscribe: %w", err)
+		return
+	}
+	limits := defaultPendingLimits(g.parent.opts.PendingLimits)
+	if err := natsSubscription.SetPendingLimits(limits.Msgs, limits.Bytes); err != nil {
+		g.err = xerrors.Errorf("set pending limits: %w", err)
+		return
+	}
+}
+
+func (g *groupSub) unsubscribe() {
+	logger := g.parent.logger.With(slog.F("event", g.event))
+	logger.Debug(context.Background(), "unsubscribing group subscription from nats")
+	// wait for any pending Subscribe to complete before we attempt to unsubscribe
+	if err := g.wait(); err != nil {
+		// subscribe failed, nothing else to do.
+		return
+	}
+	if err := g.sub.Unsubscribe(); err != nil {
+		logger.Error(context.Background(), "failed to unsubscribe from pubsub", slog.Error(err))
+	}
+	// TODO: should we retry?
+}
+
+// close cancels local delivery without waiting for callbacks.
+func (l *localSub) close() {
+	// This function must be idempotent because it is called either by the listener code, or by the pubsub itself while
+	// closing. So, we wrap it in a Once to be safe.
+	l.closeOnce.Do(func() {
+		l.queue.Close()
+
+		l.parent.mu.Lock()
+		defer l.parent.mu.Unlock()
+		l.group.mu.Lock()
+		defer l.group.mu.Unlock()
+
+		logger := l.parent.logger.With(slog.F("event", l.event))
+		logger.Debug(context.Background(), "closing local sub")
+
+		delete(l.group.localSubs, l)
+		logger.Debug(context.Background(), "removed local sub from group", slog.F("group_size", len(l.group.localSubs)))
+		if len(l.group.localSubs) > 0 {
+			return // Not last one out
+		}
+		// Last localSub does the nats unsubscribe. Do this async so we don't hold the pubsub lock too long. Nothing is
+		// left listening, so no rush.
+		l.parent.unsubscribeRoutines.Add(1)
+		go func() {
+			defer l.parent.unsubscribeRoutines.Done()
+			l.group.unsubscribe()
+		}()
+		if pSub, ok := l.parent.subscriptions[l.event]; ok && l.group == pSub {
+			delete(l.parent.subscriptions, l.event)
+		}
+	})
+}
+
+// signalDrop pushes onto dropSignal without blocking. Multiple drops
+// between dispatcher dequeues coalesce into a single pending signal, so
+// the listener observes one ErrDroppedMessages per drop wave.
+func (l *localSub) signalDrop() {
+	l.queue.Dropped()
 }
