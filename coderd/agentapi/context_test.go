@@ -71,7 +71,6 @@ func TestPushContextState(t *testing.T) {
 
 		resp, err := api.PushContextState(context.Background(), &agentproto.PushContextStateRequest{
 			Version:       1,
-			SchemaVersion: 1,
 			AggregateHash: []byte{0x01, 0x02, 0x03},
 			Initial:       true,
 			Resources: []*agentproto.ContextResource{
@@ -83,37 +82,6 @@ func TestPushContextState(t *testing.T) {
 		require.True(t, resp.GetAccepted())
 	})
 
-	t.Run("AcceptsFutureSchemaVersion", func(t *testing.T) {
-		t.Parallel()
-
-		// schema_version is stored verbatim; the proto minor version is
-		// the real forward-compat lever. A higher value must NOT be
-		// rejected here; doing so would trip the rollout fail-loud path
-		// the constant is annotated as deprecated for.
-		api, dbm := makeAPI(t)
-		expectInTx(dbm)
-
-		dbm.EXPECT().GetLatestWorkspaceAgentContextSnapshot(gomock.Any(), agentID).
-			Return(database.WorkspaceAgentContextSnapshot{}, errNoRows())
-
-		var got database.UpsertWorkspaceAgentContextSnapshotParams
-		dbm.EXPECT().UpsertWorkspaceAgentContextSnapshot(gomock.Any(), gomock.Any()).
-			DoAndReturn(func(_ context.Context, arg database.UpsertWorkspaceAgentContextSnapshotParams) (database.WorkspaceAgentContextSnapshot, error) {
-				got = arg
-				return database.WorkspaceAgentContextSnapshot{}, nil
-			})
-		dbm.EXPECT().DeleteStaleWorkspaceAgentContextResources(gomock.Any(), gomock.Any()).Return(nil)
-
-		resp, err := api.PushContextState(context.Background(), &agentproto.PushContextStateRequest{
-			Version:       1,
-			SchemaVersion: agentapi.MaxContextSchemaVersion + 1,
-			Initial:       true,
-		})
-		require.NoError(t, err)
-		require.True(t, resp.GetAccepted())
-		require.Equal(t, int64(agentapi.MaxContextSchemaVersion+1), got.SchemaVersion)
-	})
-
 	t.Run("RejectsEmptyAndDuplicateSources", func(t *testing.T) {
 		t.Parallel()
 
@@ -121,9 +89,8 @@ func TestPushContextState(t *testing.T) {
 			t.Parallel()
 			api, _ := makeAPI(t)
 			resp, err := api.PushContextState(context.Background(), &agentproto.PushContextStateRequest{
-				Version:       1,
-				SchemaVersion: 1,
-				Initial:       true,
+				Version: 1,
+				Initial: true,
 				Resources: []*agentproto.ContextResource{
 					instructionResource("", "x"),
 				},
@@ -137,9 +104,8 @@ func TestPushContextState(t *testing.T) {
 			t.Parallel()
 			api, _ := makeAPI(t)
 			resp, err := api.PushContextState(context.Background(), &agentproto.PushContextStateRequest{
-				Version:       1,
-				SchemaVersion: 1,
-				Initial:       true,
+				Version: 1,
+				Initial: true,
 				Resources: []*agentproto.ContextResource{
 					instructionResource("/a", "x"),
 					instructionResource("/a", "y"),
@@ -160,10 +126,9 @@ func TestPushContextState(t *testing.T) {
 		resource := instructionResource("/a", "x")
 		resource.Status = agentproto.ContextResource_STATUS_UNSPECIFIED
 		resp, err := api.PushContextState(context.Background(), &agentproto.PushContextStateRequest{
-			Version:       1,
-			SchemaVersion: 1,
-			Initial:       true,
-			Resources:     []*agentproto.ContextResource{resource},
+			Version:   1,
+			Initial:   true,
+			Resources: []*agentproto.ContextResource{resource},
 		})
 		require.Error(t, err)
 		require.Nil(t, resp)
@@ -174,9 +139,8 @@ func TestPushContextState(t *testing.T) {
 
 		api, _ := makeAPI(t)
 		resp, err := api.PushContextState(context.Background(), &agentproto.PushContextStateRequest{
-			Version:       1,
-			SchemaVersion: 1,
-			Initial:       true,
+			Version: 1,
+			Initial: true,
 			Resources: []*agentproto.ContextResource{
 				{
 					Source:      "/a",
@@ -204,9 +168,8 @@ func TestPushContextState(t *testing.T) {
 			Return(database.WorkspaceAgentContextSnapshot{Version: 5}, nil)
 
 		resp, err := api.PushContextState(context.Background(), &agentproto.PushContextStateRequest{
-			Version:       3,
-			SchemaVersion: 1,
-			Initial:       false,
+			Version: 3,
+			Initial: false,
 			Resources: []*agentproto.ContextResource{
 				instructionResource("/a", "stale"),
 			},
@@ -225,9 +188,8 @@ func TestPushContextState(t *testing.T) {
 			Return(database.WorkspaceAgentContextSnapshot{Version: 5}, nil)
 
 		resp, err := api.PushContextState(context.Background(), &agentproto.PushContextStateRequest{
-			Version:       5,
-			SchemaVersion: 1,
-			Initial:       false,
+			Version: 5,
+			Initial: false,
 		})
 		require.NoError(t, err)
 		require.False(t, resp.GetAccepted())
@@ -252,9 +214,8 @@ func TestPushContextState(t *testing.T) {
 			Return(nil)
 
 		resp, err := api.PushContextState(context.Background(), &agentproto.PushContextStateRequest{
-			Version:       1,
-			SchemaVersion: 1,
-			Initial:       true,
+			Version: 1,
+			Initial: true,
 			Resources: []*agentproto.ContextResource{
 				instructionResource("/a", "fresh"),
 			},
@@ -284,9 +245,8 @@ func TestPushContextState(t *testing.T) {
 		}).Return(nil)
 
 		resp, err := api.PushContextState(context.Background(), &agentproto.PushContextStateRequest{
-			Version:       2,
-			SchemaVersion: 1,
-			Initial:       false,
+			Version: 2,
+			Initial: false,
 			Resources: []*agentproto.ContextResource{
 				instructionResource("/a", "still here"),
 			},
@@ -314,9 +274,8 @@ func TestPushContextState(t *testing.T) {
 		}).Return(nil)
 
 		resp, err := api.PushContextState(context.Background(), &agentproto.PushContextStateRequest{
-			Version:       1,
-			SchemaVersion: 1,
-			Initial:       true,
+			Version: 1,
+			Initial: true,
 		})
 		require.NoError(t, err)
 		require.True(t, resp.GetAccepted())
@@ -345,9 +304,8 @@ func TestPushContextState(t *testing.T) {
 
 		mcpServer := mcpServerResource("/srv/mcp/echo", "echo", "echo server")
 		resp, err := api.PushContextState(context.Background(), &agentproto.PushContextStateRequest{
-			Version:       1,
-			SchemaVersion: 1,
-			Initial:       true,
+			Version: 1,
+			Initial: true,
 			Resources: []*agentproto.ContextResource{
 				instructionResource("/a/AGENTS.md", "hi"),
 				skillResource("/a/.agents/skills/example/SKILL.md", "example", "an example"),
@@ -398,10 +356,9 @@ func TestPushContextState(t *testing.T) {
 		oversized.Error = "file exceeds 64KiB per-resource cap"
 
 		resp, err := api.PushContextState(context.Background(), &agentproto.PushContextStateRequest{
-			Version:       1,
-			SchemaVersion: 1,
-			Initial:       true,
-			Resources:     []*agentproto.ContextResource{oversized},
+			Version:   1,
+			Initial:   true,
+			Resources: []*agentproto.ContextResource{oversized},
 		})
 		require.NoError(t, err)
 		require.True(t, resp.GetAccepted())

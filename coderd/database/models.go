@@ -5972,8 +5972,6 @@ type WorkspaceAgentContextSnapshot struct {
 	WorkspaceAgentID uuid.UUID `db:"workspace_agent_id" json:"workspace_agent_id"`
 	// Monotonic per-agent-process push counter. Resets to one when the agent process restarts; combined with the initial flag on the wire to detect agent reboots.
 	Version int64 `db:"version" json:"version"`
-	// On-wire shape version. Coderd rejects pushes carrying a higher schema_version than it understands so the rollout fails loudly.
-	SchemaVersion int64 `db:"schema_version" json:"schema_version"`
 	// sha256 over a canonical encoding of every resource in the snapshot. Identical inputs always produce identical hashes; chat hydration uses this to detect drift.
 	AggregateHash []byte `db:"aggregate_hash" json:"aggregate_hash"`
 	// Singular snapshot-level error string (count cap exceeded, watcher degraded, etc.). Empty when healthy.

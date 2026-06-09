@@ -4,13 +4,11 @@
 INSERT INTO workspace_agent_context_snapshots (
     workspace_agent_id,
     version,
-    schema_version,
     aggregate_hash,
     snapshot_error,
     received_at
 ) VALUES (
     '45e89705-e09d-4850-bcec-f9a937f5d78d',
-    1,
     1,
     '\x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f',
     '',

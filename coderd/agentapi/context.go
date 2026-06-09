@@ -19,22 +19,6 @@ import (
 	"github.com/coder/quartz"
 )
 
-// MaxContextSchemaVersion was the highest on-wire schema_version the
-// coderd context push handler historically accepted; pushes carrying
-// a higher value were rejected as a forward incompatible safety
-// belt.
-//
-// Deprecated: schema_version on the wire is redundant with the
-// agent API minor version (tailnet/proto.CurrentMinor): any change
-// that affects how coderd must interpret a snapshot is also a
-// proto-shape change that gets a minor bump, and the existing
-// Unimplemented fallback covers old coderd. The handler still
-// stores the incoming schema_version verbatim so Phase 2 readers
-// have it if they ever need it, but it no longer gates writes.
-// Remove the constant and the proto field together once a follow-up
-// proto minor bump can drop schema_version cleanly.
-const MaxContextSchemaVersion uint64 = 1
-
 // ContextAPI implements the v2.10 PushContextState RPC. It persists
 // the latest pushed snapshot per workspace agent across two tables
 // (workspace_agent_context_snapshots and
@@ -67,9 +51,6 @@ func (a *ContextAPI) PushContextState(ctx context.Context, req *agentproto.PushC
 	if req == nil {
 		return nil, xerrors.New("agentapi: PushContextState request is nil")
 	}
-	// schema_version is stored verbatim but not validated; the proto
-	// minor version is the real forward-compat lever. See the
-	// MaxContextSchemaVersion doc.
 
 	rows, err := validateAndConvertContextResources(req.Resources)
 	if err != nil {
@@ -113,9 +94,7 @@ func (a *ContextAPI) PushContextState(ctx context.Context, req *agentproto.PushC
 		_, err = tx.UpsertWorkspaceAgentContextSnapshot(ctx, database.UpsertWorkspaceAgentContextSnapshotParams{
 			WorkspaceAgentID: a.AgentID,
 			//nolint:gosec // Agent push counter; would take ~292M years at 1 push/ms to overflow int64.
-			Version: int64(req.Version),
-			//nolint:gosec // SchemaVersion is the wire schema version, single digits in practice.
-			SchemaVersion: int64(req.SchemaVersion),
+			Version:       int64(req.Version),
 			AggregateHash: append([]byte(nil), req.AggregateHash...),
 			SnapshotError: req.SnapshotError,
 			ReceivedAt:    now,
@@ -170,7 +149,6 @@ func (a *ContextAPI) PushContextState(ctx context.Context, req *agentproto.PushC
 	a.Log.Debug(ctx, "PushContextState accepted",
 		slog.F("agent_id", a.AgentID),
 		slog.F("version", req.Version),
-		slog.F("schema_version", req.SchemaVersion),
 		slog.F("initial", req.Initial),
 		slog.F("resources", len(rows)),
 	)

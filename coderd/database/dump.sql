@@ -3342,7 +3342,6 @@ COMMENT ON COLUMN workspace_agent_context_resources.source_path IS 'User-declare
 CREATE TABLE workspace_agent_context_snapshots (
     workspace_agent_id uuid NOT NULL,
     version bigint NOT NULL,
-    schema_version bigint NOT NULL,
     aggregate_hash bytea NOT NULL,
     snapshot_error text DEFAULT ''::text NOT NULL,
     received_at timestamp with time zone DEFAULT now() NOT NULL
@@ -3351,8 +3350,6 @@ CREATE TABLE workspace_agent_context_snapshots (
 COMMENT ON TABLE workspace_agent_context_snapshots IS 'Latest workspace agent context snapshot received via PushContextState. One row per workspace agent, overwritten in place.';
 
 COMMENT ON COLUMN workspace_agent_context_snapshots.version IS 'Monotonic per-agent-process push counter. Resets to one when the agent process restarts; combined with the initial flag on the wire to detect agent reboots.';
-
-COMMENT ON COLUMN workspace_agent_context_snapshots.schema_version IS 'On-wire shape version. Coderd rejects pushes carrying a higher schema_version than it understands so the rollout fails loudly.';
 
 COMMENT ON COLUMN workspace_agent_context_snapshots.aggregate_hash IS 'sha256 over a canonical encoding of every resource in the snapshot. Identical inputs always produce identical hashes; chat hydration uses this to detect drift.';
 

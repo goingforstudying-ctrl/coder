@@ -2,21 +2,18 @@
 INSERT INTO workspace_agent_context_snapshots (
     workspace_agent_id,
     version,
-    schema_version,
     aggregate_hash,
     snapshot_error,
     received_at
 ) VALUES (
     @workspace_agent_id,
     @version,
-    @schema_version,
     @aggregate_hash,
     @snapshot_error,
     @received_at
 )
 ON CONFLICT (workspace_agent_id) DO UPDATE SET
     version = EXCLUDED.version,
-    schema_version = EXCLUDED.schema_version,
     aggregate_hash = EXCLUDED.aggregate_hash,
     snapshot_error = EXCLUDED.snapshot_error,
     received_at = EXCLUDED.received_at

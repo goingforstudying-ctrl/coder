@@ -29551,7 +29551,7 @@ func (q *sqlQuerier) DeleteStaleWorkspaceAgentContextResources(ctx context.Conte
 }
 
 const getLatestWorkspaceAgentContextSnapshot = `-- name: GetLatestWorkspaceAgentContextSnapshot :one
-SELECT workspace_agent_id, version, schema_version, aggregate_hash, snapshot_error, received_at FROM workspace_agent_context_snapshots
+SELECT workspace_agent_id, version, aggregate_hash, snapshot_error, received_at FROM workspace_agent_context_snapshots
 WHERE workspace_agent_id = $1
 `
 
@@ -29561,7 +29561,6 @@ func (q *sqlQuerier) GetLatestWorkspaceAgentContextSnapshot(ctx context.Context,
 	err := row.Scan(
 		&i.WorkspaceAgentID,
 		&i.Version,
-		&i.SchemaVersion,
 		&i.AggregateHash,
 		&i.SnapshotError,
 		&i.ReceivedAt,
@@ -29695,7 +29694,6 @@ const upsertWorkspaceAgentContextSnapshot = `-- name: UpsertWorkspaceAgentContex
 INSERT INTO workspace_agent_context_snapshots (
     workspace_agent_id,
     version,
-    schema_version,
     aggregate_hash,
     snapshot_error,
     received_at
@@ -29704,22 +29702,19 @@ INSERT INTO workspace_agent_context_snapshots (
     $2,
     $3,
     $4,
-    $5,
-    $6
+    $5
 )
 ON CONFLICT (workspace_agent_id) DO UPDATE SET
     version = EXCLUDED.version,
-    schema_version = EXCLUDED.schema_version,
     aggregate_hash = EXCLUDED.aggregate_hash,
     snapshot_error = EXCLUDED.snapshot_error,
     received_at = EXCLUDED.received_at
-RETURNING workspace_agent_id, version, schema_version, aggregate_hash, snapshot_error, received_at
+RETURNING workspace_agent_id, version, aggregate_hash, snapshot_error, received_at
 `
 
 type UpsertWorkspaceAgentContextSnapshotParams struct {
 	WorkspaceAgentID uuid.UUID `db:"workspace_agent_id" json:"workspace_agent_id"`
 	Version          int64     `db:"version" json:"version"`
-	SchemaVersion    int64     `db:"schema_version" json:"schema_version"`
 	AggregateHash    []byte    `db:"aggregate_hash" json:"aggregate_hash"`
 	SnapshotError    string    `db:"snapshot_error" json:"snapshot_error"`
 	ReceivedAt       time.Time `db:"received_at" json:"received_at"`
@@ -29729,7 +29724,6 @@ func (q *sqlQuerier) UpsertWorkspaceAgentContextSnapshot(ctx context.Context, ar
 	row := q.db.QueryRowContext(ctx, upsertWorkspaceAgentContextSnapshot,
 		arg.WorkspaceAgentID,
 		arg.Version,
-		arg.SchemaVersion,
 		arg.AggregateHash,
 		arg.SnapshotError,
 		arg.ReceivedAt,
@@ -29738,7 +29732,6 @@ func (q *sqlQuerier) UpsertWorkspaceAgentContextSnapshot(ctx context.Context, ar
 	err := row.Scan(
 		&i.WorkspaceAgentID,
 		&i.Version,
-		&i.SchemaVersion,
 		&i.AggregateHash,
 		&i.SnapshotError,
 		&i.ReceivedAt,
