@@ -278,10 +278,21 @@ func (s *Server) RecordTokenUsage(ctx context.Context, in *proto.RecordTokenUsag
 		s.logger.Warn(ctx, "failed to marshal aibridge metadata from proto to JSON", slog.F("metadata", in), slog.Error(err))
 	}
 
-	// Snapshot the effective group and per-token prices, and compute cost.
-	// This is best-effort: any failure leaves the cost columns NULL so the raw
-	// token usage record is never lost.
-	cost := s.resolveTokenUsageCost(ctx, intcID, in)
+	// The interception is always recorded before any of its token usages (see
+	// aibridge/bridge.go), so it must exist. It carries the provider, model, and
+	// initiator needed for cost attribution.
+	intc, err := s.store.GetAIBridgeInterceptionByID(ctx, intcID)
+	if err != nil {
+		return nil, xerrors.Errorf("get interception %q: %w", intcID, err)
+	}
+
+	// Snapshot the effective group and per-token prices, and compute cost. A
+	// missing price row or unbudgeted user yields NULL columns; any other error
+	// fails the record so cost data stays accurate and unambiguous.
+	cost, err := s.resolveTokenUsageCost(ctx, intc, in)
+	if err != nil {
+		return nil, xerrors.Errorf("resolve token usage cost: %w", err)
+	}
 
 	_, err = s.store.InsertAIBridgeTokenUsage(ctx, database.InsertAIBridgeTokenUsageParams{
 		ID:                    uuid.New(),

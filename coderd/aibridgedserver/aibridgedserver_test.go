@@ -1199,7 +1199,7 @@ func TestRecordTokenUsage(t *testing.T) {
 				expectedErr: "failed to parse interception_id",
 			},
 			{
-				name: "database error",
+				name: "interception lookup error fails record",
 				request: &proto.RecordTokenUsageRequest{
 					InterceptionId: uuid.NewString(),
 					MsgId:          "msg_123",
@@ -1211,10 +1211,53 @@ func TestRecordTokenUsage(t *testing.T) {
 					interceptionID, err := uuid.Parse(req.GetInterceptionId())
 					assert.NoError(t, err, "parse interception UUID")
 
-					// Cost attribution is best-effort: an interception lookup
-					// failure must not stop the token usage from being recorded.
+					// An unexpected interception lookup error fails the record;
+					// no token usage is inserted.
 					db.EXPECT().GetAIBridgeInterceptionByID(gomock.Any(), interceptionID).
 						Return(database.AIBridgeInterception{}, sql.ErrConnDone)
+				},
+				expectedErr: "get interception",
+			},
+			{
+				name: "price lookup error fails record",
+				request: &proto.RecordTokenUsageRequest{
+					InterceptionId: uuid.NewString(),
+					MsgId:          "msg_123",
+					InputTokens:    100,
+					OutputTokens:   200,
+					CreatedAt:      timestamppb.Now(),
+				},
+				setupMocks: func(t *testing.T, db *dbmock.MockStore, req *proto.RecordTokenUsageRequest) {
+					interceptionID, err := uuid.Parse(req.GetInterceptionId())
+					assert.NoError(t, err, "parse interception UUID")
+
+					// An unexpected price lookup error (not sql.ErrNoRows) fails
+					// the record rather than recording an ambiguous NULL cost.
+					intc := newTestInterception(interceptionID)
+					db.EXPECT().GetAIBridgeInterceptionByID(gomock.Any(), interceptionID).Return(intc, nil)
+					db.EXPECT().GetUserAIBudgetOverride(gomock.Any(), intc.InitiatorID).
+						Return(database.UserAiBudgetOverride{}, sql.ErrNoRows)
+					db.EXPECT().GetHighestGroupAIBudgetByUser(gomock.Any(), intc.InitiatorID).
+						Return(database.GetHighestGroupAIBudgetByUserRow{}, sql.ErrNoRows)
+					db.EXPECT().GetAIModelPriceByProviderModel(gomock.Any(), gomock.Any()).
+						Return(database.AiModelPrice{}, sql.ErrConnDone)
+				},
+				expectedErr: "resolve token usage cost",
+			},
+			{
+				name: "insert error",
+				request: &proto.RecordTokenUsageRequest{
+					InterceptionId: uuid.NewString(),
+					MsgId:          "msg_123",
+					InputTokens:    100,
+					OutputTokens:   200,
+					CreatedAt:      timestamppb.Now(),
+				},
+				setupMocks: func(t *testing.T, db *dbmock.MockStore, req *proto.RecordTokenUsageRequest) {
+					interceptionID, err := uuid.Parse(req.GetInterceptionId())
+					assert.NoError(t, err, "parse interception UUID")
+
+					expectTokenUsageCostLookups(db, newTestInterception(interceptionID), nil, nil, nil)
 					db.EXPECT().InsertAIBridgeTokenUsage(gomock.Any(), gomock.Any()).Return(database.AIBridgeTokenUsage{}, sql.ErrConnDone)
 				},
 				expectedErr: "insert token usage",

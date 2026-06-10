@@ -6,6 +6,7 @@ import (
 	"errors"
 
 	"github.com/google/uuid"
+	"golang.org/x/xerrors"
 
 	"cdr.dev/slog/v3"
 	"github.com/coder/coder/v2/coderd/aibridge/budget"
@@ -29,29 +30,22 @@ type tokenUsageCost struct {
 }
 
 // resolveTokenUsageCost resolves the effective group and per-token prices for an
-// interception and computes its cost. It is best-effort: any failure leaves the
-// affected columns NULL rather than dropping the token usage record. A model
-// missing from the price table is expected and yields a NULL cost.
-func (s *Server) resolveTokenUsageCost(ctx context.Context, intcID uuid.UUID, in *proto.RecordTokenUsageRequest) tokenUsageCost {
+// interception and computes its cost. Two outcomes are expected and yield NULL
+// columns rather than an error: a user with no configured budget (NULL group)
+// and a model absent from the price table (NULL prices and cost). Any other
+// error is returned so the caller can fail the record; a NULL cost then
+// unambiguously means "model not priced" rather than "lookup failed".
+func (s *Server) resolveTokenUsageCost(ctx context.Context, intc database.AIBridgeInterception, in *proto.RecordTokenUsageRequest) (tokenUsageCost, error) {
 	var result tokenUsageCost
 
-	intc, err := s.store.GetAIBridgeInterceptionByID(ctx, intcID)
-	if err != nil {
-		s.logger.Warn(ctx, "failed to load interception for cost attribution, recording token usage without cost",
-			slog.F("interception_id", intcID.String()), slog.Error(err))
-		return result
-	}
-
 	// Resolve the effective group for attribution. This is independent of
-	// whether the model is priced.
+	// whether the model is priced. ok is false when no budget is configured,
+	// which leaves the group attribution NULL.
 	eb, ok, err := budget.ResolveUserAIBudget(ctx, s.store, intc.InitiatorID, s.budgetPolicy)
-	switch {
-	case err != nil:
-		s.logger.Warn(ctx, "failed to resolve effective AI budget, recording token usage without group attribution",
-			slog.F("interception_id", intcID.String()),
-			slog.F("initiator_id", intc.InitiatorID.String()),
-			slog.Error(err))
-	case ok:
+	if err != nil {
+		return tokenUsageCost{}, xerrors.Errorf("resolve effective AI budget for user %q: %w", intc.InitiatorID, err)
+	}
+	if ok {
 		result.effectiveGroupID = uuid.NullUUID{UUID: eb.GroupID, Valid: true}
 	}
 
@@ -65,11 +59,9 @@ func (s *Server) resolveTokenUsageCost(ctx context.Context, intcID uuid.UUID, in
 		// Model not in the price table: record tokens but leave cost NULL.
 		s.logger.Debug(ctx, "no price found for model, recording token usage with NULL cost",
 			slog.F("provider", intc.Provider), slog.F("model", intc.Model))
-		return result
+		return result, nil
 	case err != nil:
-		s.logger.Warn(ctx, "failed to look up model price, recording token usage without cost",
-			slog.F("provider", intc.Provider), slog.F("model", intc.Model), slog.Error(err))
-		return result
+		return tokenUsageCost{}, xerrors.Errorf("look up model price for %s/%s: %w", intc.Provider, intc.Model, err)
 	}
 
 	result.inputPrice = price.InputPrice
@@ -82,7 +74,7 @@ func (s *Server) resolveTokenUsageCost(ctx context.Context, intcID uuid.UUID, in
 			in.GetCacheReadInputTokens(), in.GetCacheWriteInputTokens()),
 		Valid: true,
 	}
-	return result
+	return result, nil
 }
 
 // computeCost returns the cost of an interception in micro-units, snapshotting
