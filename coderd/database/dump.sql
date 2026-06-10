@@ -1430,7 +1430,18 @@ CREATE TABLE aibridge_token_usages (
     metadata jsonb,
     created_at timestamp with time zone NOT NULL,
     cache_read_input_tokens bigint DEFAULT 0 NOT NULL,
-    cache_write_input_tokens bigint DEFAULT 0 NOT NULL
+    cache_write_input_tokens bigint DEFAULT 0 NOT NULL,
+    effective_group_id uuid,
+    input_price bigint,
+    output_price bigint,
+    cache_read_price bigint,
+    cache_write_price bigint,
+    cost bigint,
+    CONSTRAINT aibridge_token_usages_cache_read_price_check CHECK ((cache_read_price >= 0)),
+    CONSTRAINT aibridge_token_usages_cache_write_price_check CHECK ((cache_write_price >= 0)),
+    CONSTRAINT aibridge_token_usages_cost_check CHECK ((cost >= 0)),
+    CONSTRAINT aibridge_token_usages_input_price_check CHECK ((input_price >= 0)),
+    CONSTRAINT aibridge_token_usages_output_price_check CHECK ((output_price >= 0))
 );
 
 COMMENT ON TABLE aibridge_token_usages IS 'Audit log of tokens used by intercepted requests in AI Bridge';
@@ -4602,6 +4613,9 @@ ALTER TABLE ONLY ai_seat_state
 
 ALTER TABLE ONLY aibridge_interceptions
     ADD CONSTRAINT aibridge_interceptions_initiator_id_fkey FOREIGN KEY (initiator_id) REFERENCES users(id);
+
+ALTER TABLE ONLY aibridge_token_usages
+    ADD CONSTRAINT aibridge_token_usages_effective_group_id_fkey FOREIGN KEY (effective_group_id) REFERENCES groups(id) ON DELETE SET NULL;
 
 ALTER TABLE ONLY api_keys
     ADD CONSTRAINT api_keys_user_id_uuid_fkey FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;

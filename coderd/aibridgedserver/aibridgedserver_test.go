@@ -1050,7 +1050,7 @@ func TestRecordTokenUsage(t *testing.T) {
 		},
 		[]testRecordMethodCase[*proto.RecordTokenUsageRequest]{
 			{
-				name: "valid token usage",
+				name: "unpriced model records null cost",
 				request: &proto.RecordTokenUsageRequest{
 					InterceptionId:        uuid.NewString(),
 					MsgId:                 "msg_123",
@@ -1065,6 +1065,11 @@ func TestRecordTokenUsage(t *testing.T) {
 					interceptionID, err := uuid.Parse(req.GetInterceptionId())
 					assert.NoError(t, err, "parse interception UUID")
 
+					// No budget configured and no price row: tokens recorded
+					// with NULL cost, prices, and group attribution.
+					intc := newTestInterception(interceptionID)
+					expectTokenUsageCostLookups(db, intc, nil, nil, nil)
+
 					db.EXPECT().InsertAIBridgeTokenUsage(gomock.Any(), gomock.Cond(func(p database.InsertAIBridgeTokenUsageParams) bool {
 						if !assert.NotEqual(t, uuid.Nil, p.ID, "ID") ||
 							!assert.Equal(t, interceptionID, p.InterceptionID, "interception ID") ||
@@ -1074,7 +1079,13 @@ func TestRecordTokenUsage(t *testing.T) {
 							!assert.Equal(t, req.GetCacheReadInputTokens(), p.CacheReadInputTokens, "cache read input tokens") ||
 							!assert.Equal(t, req.GetCacheWriteInputTokens(), p.CacheWriteInputTokens, "cache write input tokens") ||
 							!assert.JSONEq(t, metadataJSON, string(p.Metadata), "metadata") ||
-							!assert.WithinDuration(t, req.GetCreatedAt().AsTime(), p.CreatedAt, time.Second, "created at") {
+							!assert.WithinDuration(t, req.GetCreatedAt().AsTime(), p.CreatedAt, time.Second, "created at") ||
+							!assert.False(t, p.EffectiveGroupID.Valid, "effective group ID null") ||
+							!assert.False(t, p.InputPrice.Valid, "input price null") ||
+							!assert.False(t, p.OutputPrice.Valid, "output price null") ||
+							!assert.False(t, p.CacheReadPrice.Valid, "cache read price null") ||
+							!assert.False(t, p.CacheWritePrice.Valid, "cache write price null") ||
+							!assert.False(t, p.Cost.Valid, "cost null") {
 							return false
 						}
 						return true
@@ -1092,6 +1103,88 @@ func TestRecordTokenUsage(t *testing.T) {
 						},
 						CreatedAt: req.GetCreatedAt().AsTime(),
 					}, nil)
+				},
+			},
+			{
+				name: "priced model with group budget snapshots cost",
+				request: &proto.RecordTokenUsageRequest{
+					InterceptionId:        uuid.NewString(),
+					MsgId:                 "msg_123",
+					InputTokens:           100,
+					OutputTokens:          200,
+					CacheReadInputTokens:  50,
+					CacheWriteInputTokens: 10,
+					CreatedAt:             timestamppb.Now(),
+				},
+				setupMocks: func(t *testing.T, db *dbmock.MockStore, req *proto.RecordTokenUsageRequest) {
+					interceptionID, err := uuid.Parse(req.GetInterceptionId())
+					assert.NoError(t, err, "parse interception UUID")
+
+					intc := newTestInterception(interceptionID)
+					groupID := uuid.New()
+					group := &database.GetHighestGroupAIBudgetByUserRow{GroupID: groupID, SpendLimitMicros: 1_000_000_000}
+					// cache_write_price is NULL to verify it is treated as zero.
+					price := &database.AiModelPrice{
+						Provider:        intc.Provider,
+						Model:           intc.Model,
+						InputPrice:      sql.NullInt64{Int64: 3_000_000, Valid: true},
+						OutputPrice:     sql.NullInt64{Int64: 6_000_000, Valid: true},
+						CacheReadPrice:  sql.NullInt64{Int64: 300_000, Valid: true},
+						CacheWritePrice: sql.NullInt64{Valid: false},
+					}
+					expectTokenUsageCostLookups(db, intc, nil, group, price)
+
+					// 100*3_000_000/1e6 + 200*6_000_000/1e6 + 50*300_000/1e6 + 0
+					// = 300 + 1200 + 15 = 1515.
+					const wantCost int64 = 1515
+
+					db.EXPECT().InsertAIBridgeTokenUsage(gomock.Any(), gomock.Cond(func(p database.InsertAIBridgeTokenUsageParams) bool {
+						if !assert.Equal(t, uuid.NullUUID{UUID: groupID, Valid: true}, p.EffectiveGroupID, "effective group ID") ||
+							!assert.Equal(t, price.InputPrice, p.InputPrice, "input price") ||
+							!assert.Equal(t, price.OutputPrice, p.OutputPrice, "output price") ||
+							!assert.Equal(t, price.CacheReadPrice, p.CacheReadPrice, "cache read price") ||
+							!assert.Equal(t, price.CacheWritePrice, p.CacheWritePrice, "cache write price") ||
+							!assert.Equal(t, sql.NullInt64{Int64: wantCost, Valid: true}, p.Cost, "cost") {
+							return false
+						}
+						return true
+					})).Return(database.AIBridgeTokenUsage{ID: uuid.New(), InterceptionID: interceptionID}, nil)
+				},
+			},
+			{
+				name: "user override attributes group",
+				request: &proto.RecordTokenUsageRequest{
+					InterceptionId: uuid.NewString(),
+					MsgId:          "msg_123",
+					InputTokens:    100,
+					CreatedAt:      timestamppb.Now(),
+				},
+				setupMocks: func(t *testing.T, db *dbmock.MockStore, req *proto.RecordTokenUsageRequest) {
+					interceptionID, err := uuid.Parse(req.GetInterceptionId())
+					assert.NoError(t, err, "parse interception UUID")
+
+					intc := newTestInterception(interceptionID)
+					overrideGroupID := uuid.New()
+					override := &database.UserAiBudgetOverride{
+						UserID:           intc.InitiatorID,
+						GroupID:          overrideGroupID,
+						SpendLimitMicros: 1_500_000_000,
+					}
+					price := &database.AiModelPrice{
+						Provider:   intc.Provider,
+						Model:      intc.Model,
+						InputPrice: sql.NullInt64{Int64: 3_000_000, Valid: true},
+					}
+					expectTokenUsageCostLookups(db, intc, override, nil, price)
+
+					db.EXPECT().InsertAIBridgeTokenUsage(gomock.Any(), gomock.Cond(func(p database.InsertAIBridgeTokenUsageParams) bool {
+						// Override group wins; group resolution is skipped.
+						if !assert.Equal(t, uuid.NullUUID{UUID: overrideGroupID, Valid: true}, p.EffectiveGroupID, "effective group ID") ||
+							!assert.Equal(t, sql.NullInt64{Int64: 300, Valid: true}, p.Cost, "cost") {
+							return false
+						}
+						return true
+					})).Return(database.AIBridgeTokenUsage{ID: uuid.New(), InterceptionID: interceptionID}, nil)
 				},
 			},
 			{
@@ -1115,12 +1208,67 @@ func TestRecordTokenUsage(t *testing.T) {
 					CreatedAt:      timestamppb.Now(),
 				},
 				setupMocks: func(t *testing.T, db *dbmock.MockStore, req *proto.RecordTokenUsageRequest) {
+					interceptionID, err := uuid.Parse(req.GetInterceptionId())
+					assert.NoError(t, err, "parse interception UUID")
+
+					// Cost attribution is best-effort: an interception lookup
+					// failure must not stop the token usage from being recorded.
+					db.EXPECT().GetAIBridgeInterceptionByID(gomock.Any(), interceptionID).
+						Return(database.AIBridgeInterception{}, sql.ErrConnDone)
 					db.EXPECT().InsertAIBridgeTokenUsage(gomock.Any(), gomock.Any()).Return(database.AIBridgeTokenUsage{}, sql.ErrConnDone)
 				},
 				expectedErr: "insert token usage",
 			},
 		},
 	)
+}
+
+// newTestInterception returns an interception with a fixed initiator, provider,
+// and model for cost-attribution test setup.
+func newTestInterception(id uuid.UUID) database.AIBridgeInterception {
+	return database.AIBridgeInterception{
+		ID:          id,
+		InitiatorID: uuid.New(),
+		Provider:    "anthropic",
+		Model:       "claude-sonnet-4-6",
+	}
+}
+
+// expectTokenUsageCostLookups mocks the store calls RecordTokenUsage makes
+// before inserting a token usage row. A nil override/group/price means the
+// corresponding lookup returns no rows. The deployment defaults to the
+// "highest" budget policy, so a group lookup follows a missing override.
+func expectTokenUsageCostLookups(
+	db *dbmock.MockStore,
+	intc database.AIBridgeInterception,
+	override *database.UserAiBudgetOverride,
+	group *database.GetHighestGroupAIBudgetByUserRow,
+	price *database.AiModelPrice,
+) {
+	db.EXPECT().GetAIBridgeInterceptionByID(gomock.Any(), intc.ID).Return(intc, nil)
+
+	if override != nil {
+		db.EXPECT().GetUserAIBudgetOverride(gomock.Any(), intc.InitiatorID).Return(*override, nil)
+	} else {
+		db.EXPECT().GetUserAIBudgetOverride(gomock.Any(), intc.InitiatorID).
+			Return(database.UserAiBudgetOverride{}, sql.ErrNoRows)
+		if group != nil {
+			db.EXPECT().GetHighestGroupAIBudgetByUser(gomock.Any(), intc.InitiatorID).Return(*group, nil)
+		} else {
+			db.EXPECT().GetHighestGroupAIBudgetByUser(gomock.Any(), intc.InitiatorID).
+				Return(database.GetHighestGroupAIBudgetByUserRow{}, sql.ErrNoRows)
+		}
+	}
+
+	if price != nil {
+		db.EXPECT().GetAIModelPriceByProviderModel(gomock.Any(), database.GetAIModelPriceByProviderModelParams{
+			Provider: intc.Provider,
+			Model:    intc.Model,
+		}).Return(*price, nil)
+	} else {
+		db.EXPECT().GetAIModelPriceByProviderModel(gomock.Any(), gomock.Any()).
+			Return(database.AiModelPrice{}, sql.ErrNoRows)
+	}
 }
 
 func TestRecordPromptUsage(t *testing.T) {
@@ -1600,6 +1748,7 @@ func TestStructuredLogging(t *testing.T) {
 			name:              "RecordTokenUsage_logs_when_enabled",
 			structuredLogging: true,
 			setupMocks: func(db *dbmock.MockStore, intcID uuid.UUID) {
+				expectTokenUsageCostLookups(db, newTestInterception(intcID), nil, nil, nil)
 				db.EXPECT().InsertAIBridgeTokenUsage(gomock.Any(), gomock.Any()).Return(database.AIBridgeTokenUsage{
 					ID:             uuid.New(),
 					InterceptionID: intcID,

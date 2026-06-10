@@ -14,6 +14,11 @@ const (
 	CheckAiModelPricesInputPriceCheck                 CheckConstraint = "ai_model_prices_input_price_check"                   // ai_model_prices
 	CheckAiModelPricesOutputPriceCheck                CheckConstraint = "ai_model_prices_output_price_check"                  // ai_model_prices
 	CheckAiProvidersNameCheck                         CheckConstraint = "ai_providers_name_check"                             // ai_providers
+	CheckAibridgeTokenUsagesCacheReadPriceCheck       CheckConstraint = "aibridge_token_usages_cache_read_price_check"        // aibridge_token_usages
+	CheckAibridgeTokenUsagesCacheWritePriceCheck      CheckConstraint = "aibridge_token_usages_cache_write_price_check"       // aibridge_token_usages
+	CheckAibridgeTokenUsagesCostCheck                 CheckConstraint = "aibridge_token_usages_cost_check"                    // aibridge_token_usages
+	CheckAibridgeTokenUsagesInputPriceCheck           CheckConstraint = "aibridge_token_usages_input_price_check"             // aibridge_token_usages
+	CheckAibridgeTokenUsagesOutputPriceCheck          CheckConstraint = "aibridge_token_usages_output_price_check"            // aibridge_token_usages
 	CheckAPIKeysAllowListNotEmpty                     CheckConstraint = "api_keys_allow_list_not_empty"                       // api_keys
 	CheckBoundaryLogsSequenceNumberCheck              CheckConstraint = "boundary_logs_sequence_number_check"                 // boundary_logs
 	CheckChatModelConfigsAiProviderRequiredWhenActive CheckConstraint = "chat_model_configs_ai_provider_required_when_active" // chat_model_configs

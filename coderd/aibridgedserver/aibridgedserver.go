@@ -1,6 +1,7 @@
 package aibridgedserver
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -67,6 +68,13 @@ type store interface {
 	UpdateAIBridgeInterceptionEnded(ctx context.Context, intcID database.UpdateAIBridgeInterceptionEndedParams) (database.AIBridgeInterception, error)
 	GetAIBridgeInterceptionLineageByToolCallID(ctx context.Context, toolCallID string) (database.GetAIBridgeInterceptionLineageByToolCallIDRow, error)
 
+	// Cost-attribution queries, used to snapshot price and effective group on
+	// each token usage record.
+	GetAIBridgeInterceptionByID(ctx context.Context, id uuid.UUID) (database.AIBridgeInterception, error)
+	GetAIModelPriceByProviderModel(ctx context.Context, arg database.GetAIModelPriceByProviderModelParams) (database.AiModelPrice, error)
+	GetUserAIBudgetOverride(ctx context.Context, userID uuid.UUID) (database.UserAiBudgetOverride, error)
+	GetHighestGroupAIBudgetByUser(ctx context.Context, userID uuid.UUID) (database.GetHighestGroupAIBudgetByUserRow, error)
+
 	// MCPConfigurator-related queries.
 	GetExternalAuthLinksByUserID(ctx context.Context, userID uuid.UUID) ([]database.ExternalAuthLink, error)
 
@@ -87,6 +95,9 @@ type Server struct {
 	coderMCPConfig    *proto.MCPServerConfig // may be nil if not available
 	structuredLogging bool
 	aiSeatTracker     aiseats.SeatTracker
+	// budgetPolicy selects the effective group when a user belongs to multiple
+	// budgeted groups, used for cost attribution on token usage records.
+	budgetPolicy codersdk.AIBudgetPolicy
 }
 
 func NewServer(lifecycleCtx context.Context, store store, logger slog.Logger, accessURL string,
@@ -110,6 +121,9 @@ func NewServer(lifecycleCtx context.Context, store store, logger slog.Logger, ac
 		externalAuthConfigs: eac,
 		structuredLogging:   bridgeCfg.StructuredLogging.Value(),
 		aiSeatTracker:       aiSeatTracker,
+		// Default to the "highest" policy when unset so legacy/empty config
+		// still resolves an effective group rather than erroring.
+		budgetPolicy: cmp.Or(codersdk.AIBudgetPolicy(bridgeCfg.BudgetPolicy), codersdk.AIBudgetPolicyHighest),
 	}
 
 	if bridgeCfg.InjectCoderMCPTools {
@@ -264,6 +278,11 @@ func (s *Server) RecordTokenUsage(ctx context.Context, in *proto.RecordTokenUsag
 		s.logger.Warn(ctx, "failed to marshal aibridge metadata from proto to JSON", slog.F("metadata", in), slog.Error(err))
 	}
 
+	// Snapshot the effective group and per-token prices, and compute cost.
+	// This is best-effort: any failure leaves the cost columns NULL so the raw
+	// token usage record is never lost.
+	cost := s.resolveTokenUsageCost(ctx, intcID, in)
+
 	_, err = s.store.InsertAIBridgeTokenUsage(ctx, database.InsertAIBridgeTokenUsageParams{
 		ID:                    uuid.New(),
 		InterceptionID:        intcID,
@@ -274,6 +293,12 @@ func (s *Server) RecordTokenUsage(ctx context.Context, in *proto.RecordTokenUsag
 		CacheWriteInputTokens: in.GetCacheWriteInputTokens(),
 		Metadata:              out,
 		CreatedAt:             in.GetCreatedAt().AsTime(),
+		EffectiveGroupID:      cost.effectiveGroupID,
+		InputPrice:            cost.inputPrice,
+		OutputPrice:           cost.outputPrice,
+		CacheReadPrice:        cost.cacheReadPrice,
+		CacheWritePrice:       cost.cacheWritePrice,
+		Cost:                  cost.cost,
 	})
 	if err != nil {
 		return nil, xerrors.Errorf("insert token usage: %w", err)
